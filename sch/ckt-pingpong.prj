@@ -1,0 +1,6 @@
+schematics ckt-pingpong.sch
+output-name ../pcb/ckt-pingpong
+skip-m4
+elements-dir ../../ise-footprints
+
+
