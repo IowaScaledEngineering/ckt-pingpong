@@ -544,9 +544,9 @@ void drawSplashScreen()
 	//               01234567890123456789
 	//                        ||
 	lcd_gotoxy(0,0);
-	lcd_puts_p(PSTR("PingPong  Controller"));
+	lcd_puts_p(PSTR(" The MotorMan  v1.0 "));
 	lcd_gotoxy(0,1);
-	lcd_puts_p(PSTR("       v1.0"));
+	lcd_puts_p(PSTR(""));
 	lcd_gotoxy(0,2);
 	lcd_puts_p(PSTR("Iowa Scaled Eng 2020"));
 	lcd_gotoxy(0,3);
@@ -560,6 +560,79 @@ void drawSplashScreen()
 	lcd_clrscr();
 }
 
+/* Screen Layouts
+
+//  Main Screen
+//  00000000001111111111
+//  01234567890123456789
+// [ADR:xxxx vv.vV a.aaA]
+// [SPD:nnn%  RAMP:yy.ys]
+// [DIR:fff    SENSE:-/-]
+// [LOAD REV  STOP CONF ]
+//  1111 2222 3333 4444
+// xxxx = Unit number (4 digit, sNNN for short, or *DC* for DC)
+// nnn = Speed, 0-100%
+// STOP softkey says "RUN" when stopped
+// yy.y = Ramp, 0-25.5 seconds
+// a.aa = Track amps
+// v.v = Track volts
+// fff = FWD/REV (direction)
+// REV softkey will say "FWD" if direction is reversed
+// [ADR:xxxx  **FAULT** ] <-- Top line if driver is faulted
+// 
+
+// Configuration Options
+// - DC/DCC
+// - Loco Config
+// - 
+
+//  Loco Configuration Slots Screen (15 slots?)
+//  00000000001111111111
+//  01234567890123456789
+// [> nn A:xxxx nnn/yy.y]
+// [> nn A:xxxx nnn/yy.y]
+// [> nn A:xxxx         ]
+// [ UP  DOWN SLCT BACK ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+
+//  Loco Configuration Screen 1
+//  00000000001111111111
+//  01234567890123456789
+// [nn  ADDR  MAX  RAMP ]
+// [    xxxx  nnn% yy.ys]
+// [    ^               ]
+// [ +++  >>> NEXT CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+//  Loco Configuration Screen 2
+//  00000000001111111111
+//  01234567890123456789
+// [nn   FWD FWD REV REV]
+// [ Fnn Fnn Fnn Fnn Fnn]
+// [     ^              ]
+// [ +++  >>> SAVE CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+
+//  Diagnostic Screen
+//  00000000001111111111
+//  01234567890123456789
+// [IN:vv.vV ]
+// [A:vv.v B:vv.v I:a.aa]
+// [S:-/- F:n           ]
+// [PHSA PHSB      BACK ]
+// F:n - n=Y/N for faulted
+*/
 void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3Text, const char* key4Text)
 {
 	uint8_t i;
