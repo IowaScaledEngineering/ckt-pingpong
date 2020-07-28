@@ -38,6 +38,7 @@ LICENSE:
 #include "lcd.h"
 
 #define min(a,b) ((a<b)?(a):(b))
+#define max(a,b) ((a>b)?(a):(b))
 
 // ******** Start 100 Hz Timer - Very Accurate Version
 
@@ -48,59 +49,22 @@ LICENSE:
 // and the call to this function in the main function
 
 volatile uint16_t decisecs=0;
-volatile uint16_t updateXmitInterval=20;
 volatile uint16_t screenUpdateDecisecs=0;
 volatile uint16_t fastDecisecs=0;
 volatile uint8_t scaleTenthsAccum = 0;
 uint16_t scaleFactor = 10;
-volatile uint8_t status=0;
+volatile uint8_t eventFlags=0;
 
 uint16_t kelvinTemp = 0;
 uint8_t relHumidity = 0;
 uint8_t thVoltage = 0;
 uint8_t thAlternator = 0;
 
-#define STATUS_READ_INPUTS 0x01
-#define STATUS_FAST_ACTIVE 0x02
-#define STATUS_FAST_AMPM   0x04
-#define STATUS_REAL_AMPM   0x08
-#define STATUS_FAST_HOLDING 0x10 // This hold flag indicates we're actually in hold
-#define STATUS_FAST_HOLD   0x20  // This flag indicates that we start going into fast in hold
-#define STATUS_TEMP_DEG_F  0x40
 
-#define TIME_FLAGS_DISP_FAST       0x01
-#define TIME_FLAGS_DISP_FAST_HOLD  0x02
-#define TIME_FLAGS_DISP_REAL_AMPM  0x04
-#define TIME_FLAGS_DISP_FAST_AMPM  0x08
-
-#define FAST_MODE (status & STATUS_FAST_ACTIVE)
-#define FASTHOLD_MODE (status & STATUS_FAST_HOLDING)
-
-
-#define EE_ADDR_CONF_FLAGS     0x20
-
-#define CONF_FLAG_FAST_AMPM          0x04
-#define CONF_FLAG_REAL_AMPM          0x08
-#define CONF_FLAG_FAST_HOLD_START    0x20
-#define CONF_FLAG_TEMP_DEG_F         0x40
-
-
-#define EE_ADDR_FAST_START1_H   0x30
-#define EE_ADDR_FAST_START1_M   0x31
-#define EE_ADDR_FAST_START1_S   0x32
-#define EE_ADDR_FAST_START2_H   0x33
-#define EE_ADDR_FAST_START2_M   0x34
-#define EE_ADDR_FAST_START2_S   0x35
-#define EE_ADDR_FAST_START3_H   0x36
-#define EE_ADDR_FAST_START3_M   0x37
-#define EE_ADDR_FAST_START3_S   0x38
-
-#define EE_ADDR_FAST_RATIO_H   0x3A
-#define EE_ADDR_FAST_RATIO_L   0x3B
-#define EE_ADDR_TH_SRC_ADDR    0x3C
-#define EE_ADDR_TH_TIMEOUT_H   0x3D
-#define EE_ADDR_TH_TIMEOUT_L   0x3E
-
+#define EVENT_TIME_READ_INPUTS      0x01
+#define EVENT_TIME_READ_ADCS        0x02
+#define EVENT_TIME_ADJUST_SPEED     0x04
+#define EVENT_ANALOG_READ_COMPLETE  0x10
 
 uint32_t loopCount = 0;
 
@@ -111,96 +75,98 @@ void blankCursorLine()
 }
 
 
-uint8_t debounce(uint8_t raw_inputs)
+typedef struct
 {
-	static uint8_t clock_A=0, clock_B=0, debounced_state=0;
-	uint8_t delta = raw_inputs ^ debounced_state;   //Find all of the changes
+	uint8_t clock_A;
+	uint8_t clock_B;
+	uint8_t debounced_state;
+} DebounceState;
+
+void initDebounceState(DebounceState* d)
+{
+	d->clock_A = d->clock_B = d->debounced_state = 0;
+}
+
+uint8_t debounce(uint8_t raw_inputs, DebounceState* d)
+{
+	uint8_t delta = raw_inputs ^ d->debounced_state;   //Find all of the changes
 	uint8_t changes;
 
-	clock_A ^= clock_B;                     //Increment the counters
-	clock_B  = ~clock_B;
+	d->clock_A ^= d->clock_B;                     //Increment the counters
+	d->clock_B  = ~d->clock_B;
 
-	clock_A &= delta;                       //Reset the counters if no changes
-	clock_B &= delta;                       //were detected.
+	d->clock_A &= delta;                       //Reset the counters if no changes
+	d->clock_B &= delta;                       //were detected.
 
-	changes = ~((~delta) | clock_A | clock_B);
-	debounced_state ^= changes;
-	debounced_state &= 0x0F;
-	return(changes & ~(debounced_state));
+	changes = ~((~delta) | d->clock_A | d->clock_B);
+	d->debounced_state ^= changes;
+	return(changes & ~(d->debounced_state));
 }
+
+volatile uint16_t adcValue[8];
+
+void initializeADC()
+{
+	for(uint8_t i=0; i<8; i++)
+		adcValue[i] = 0;
+
+	// Setup ADC for bus voltage monitoring
+	ADMUX  = 0x44;  // AVCC reference, ADC4 starting channel
+	ADCSRA = _BV(ADIF) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0); // 128 prescaler
+	ADCSRB = 0x00;  // Free-running mode
+	DIDR0  = 0xF0;  // Turn ADC 4-7 into inputs
+	ADCSRA |= _BV(ADEN) | _BV(ADSC) | _BV(ADIE) | _BV(ADIF);
+}
+
+ISR(ADC_vect)
+{
+	static uint8_t workingChannel = 0;
+	static uint16_t accumulator[4] = {0,0,0,0};
+	static uint8_t count = 0;
+	
+	accumulator[workingChannel++] += ADC;
+	ADMUX = (ADMUX & 0xF0) | ((workingChannel+4) & 0x07);
+	if (4 == workingChannel)
+	{
+		count++;
+		workingChannel = 0;
+	}
+	
+	if (count >= 64)
+	{
+		for(uint8_t i=0; i<4; i++)
+		{
+			adcValue[i] = accumulator[i] / 64;
+			accumulator[i] = 0;
+		}
+		count = 0;
+		eventFlags |= EVENT_ANALOG_READ_COMPLETE;
+	}
+
+	if (0 == (eventFlags & EVENT_ANALOG_READ_COMPLETE))
+	{
+		// Trigger the next conversion.  Not using auto-trigger so that we can safely change channels
+		ADCSRA |= _BV(ADSC);
+	}
+}
+
 
 typedef enum
 {
 	SCREEN_MAIN_DRAW = 0,
-	SCREEN_MAIN_IDLE = 1,
-	SCREEN_MAIN_UPDATE_TIME = 2,
-
+	SCREEN_MAIN_REFRESH = 1,
+	SCREEN_MAIN_IDLE = 2,
+	
 	SCREEN_CONF_MENU_DRAW = 10,
 	SCREEN_CONF_MENU_IDLE = 11,
 
 	SCREEN_FAST_RESET_DRAW = 14,
 	SCREEN_FAST_RESET_IDLE = 15,
 
-	SCREEN_CONF_R1224_SETUP = 100,
-	SCREEN_CONF_R1224_DRAW = 101,
-	SCREEN_CONF_R1224_IDLE = 102,
+	SCREEN_CONF_OUTPUT_SETUP = 100,
+	SCREEN_CONF_OUTPUT_DRAW  = 101,
+	SCREEN_CONF_OUTPUT_IDLE  = 102,
 
-	SCREEN_CONF_F1224_SETUP = 110,
-	SCREEN_CONF_F1224_DRAW = 111,
-	SCREEN_CONF_F1224_IDLE = 112,
-
-	SCREEN_CONF_FRATIO_SETUP = 115,
-	SCREEN_CONF_FRATIO_DRAW = 116,
-	SCREEN_CONF_FRATIO_IDLE = 117,
-	SCREEN_CONF_FRATIO_CONFIRM = 118,
-	
-	SCREEN_CONF_RTIME_SETUP = 120,
-	SCREEN_CONF_RTIME_DRAW  = 121,
-	SCREEN_CONF_RTIME_IDLE  = 122,
-	SCREEN_CONF_RTIME_CONFIRM = 123,
-
-	SCREEN_CONF_FSTART1_SETUP = 127,
-	SCREEN_CONF_FSTART2_SETUP = 128,
-	SCREEN_CONF_FSTART3_SETUP = 129,	
-	SCREEN_CONF_FSTART_COMMON_SETUP = 130,
-	SCREEN_CONF_FSTART_DRAW  = 131,
-	SCREEN_CONF_FSTART_IDLE  = 132,
-	SCREEN_CONF_FSTART_CONFIRM = 133,
-
-	SCREEN_CONF_FSHOLD_SETUP = 135,
-	SCREEN_CONF_FSHOLD_DRAW  = 136,
-	SCREEN_CONF_FSHOLD_IDLE  = 137,
-	SCREEN_CONF_FSHOLD_CONFIRM = 138,
-
-	SCREEN_CONF_PKTINT_SETUP = 140,
-	SCREEN_CONF_PKTINT_DRAW = 141,
-	SCREEN_CONF_PKTINT_IDLE = 142,
-	SCREEN_CONF_PKTINT_CONFIRM = 143,
-	
-	SCREEN_CONF_RDATE_SETUP = 150,
-	SCREEN_CONF_RDATE_DRAW  = 151,
-	SCREEN_CONF_RDATE_IDLE  = 152,
-	SCREEN_CONF_RDATE_CONFIRM = 153,
-
-	SCREEN_CONF_ADDR_SETUP = 160,
-	SCREEN_CONF_ADDR_DRAW  = 161,
-	SCREEN_CONF_ADDR_IDLE  = 162,
-	SCREEN_CONF_ADDR_CONFIRM = 163,	
-	
-	SCREEN_CONF_THADDR_SETUP = 170,
-	SCREEN_CONF_THADDR_DRAW  = 171,
-	SCREEN_CONF_THADDR_IDLE  = 172,
-	SCREEN_CONF_THADDR_CONFIRM = 173,		
-	
-	SCREEN_CONF_TEMPU_SETUP = 176,
-	SCREEN_CONF_TEMPU_DRAW = 177,
-	SCREEN_CONF_TEMPU_IDLE = 178,	
-
-	SCREEN_CONF_THTIMEOUT_SETUP = 180,
-	SCREEN_CONF_THTIMEOUT_DRAW  = 181,
-	SCREEN_CONF_THTIMEOUT_IDLE  = 182,
-	SCREEN_CONF_THTIMEOUT_CONFIRM = 183,	
-		
 	SCREEN_CONF_DIAG_SETUP = 250,
 	SCREEN_CONF_DIAG_DRAW  = 251,
 	SCREEN_CONF_DIAG_IDLE  = 252,
@@ -209,10 +175,6 @@ typedef enum
 
 } ScreenState;
 
-#define SOFTKEY_1 0x01
-#define SOFTKEY_2 0x02
-#define SOFTKEY_3 0x04
-#define SOFTKEY_4 0x08
 
 typedef struct
 {
@@ -222,21 +184,8 @@ typedef struct
 
 const ConfigurationOption configurationOptions[] = 
 {
-  { "Real 12/24",     SCREEN_CONF_R1224_SETUP },
-  { "Real Time     ", SCREEN_CONF_RTIME_SETUP },
-  { "Real Date     ", SCREEN_CONF_RDATE_SETUP },  
-  { "Fast 12/24",      SCREEN_CONF_F1224_SETUP },
-  { "Fast Ratio     ", SCREEN_CONF_FRATIO_SETUP },  
-  { "Fast Start Hold", SCREEN_CONF_FSHOLD_SETUP },  
-  { "Fast Start Time 1", SCREEN_CONF_FSTART1_SETUP },
-  { "Fast Start Time 2", SCREEN_CONF_FSTART2_SETUP },
-  { "Fast Start Time 3", SCREEN_CONF_FSTART3_SETUP },    
-  { "Time Pkt Interval", SCREEN_CONF_PKTINT_SETUP },
-  { "Node Address",   SCREEN_CONF_ADDR_SETUP },
-  { "TH Address",     SCREEN_CONF_THADDR_SETUP },
-  { "TH Timeout", SCREEN_CONF_THTIMEOUT_SETUP },
-  { "Temperature Units", SCREEN_CONF_TEMPU_SETUP },
-  { "Diagnostics",    SCREEN_CONF_DIAG_SETUP },  
+  { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
+  { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
 };
 
 #define NUM_RATIO_OPTIONS  (sizeof(ratioOptions)/sizeof(ConfigurationOption))
@@ -266,6 +215,7 @@ void dcc_init()
 	// Set to output ones by default
 	OCR1A = OCR1B = DCC_ONE_HALF_BIT;
 
+	TCCR1B = 0;
 	TCCR1B &= ~(_BV(CS12) | _BV(CS11) | _BV(CS10)); // Stop the timer for the moment
 	TCNT1 = 0; // Reset the timer
 
@@ -277,6 +227,17 @@ void dcc_init()
 
 	TCCR1B = _BV(WGM12) | _BV(CS10);
 	TIMSK1 |= _BV(OCIE1A);
+}
+
+void dcc_stop()
+{
+	PORTD &= ~(_BV(PD4) | _BV(PD5));  // Both low for driver high impedence
+	DDRD |= _BV(PD4) | _BV(PD5);
+	
+	TCCR1B &= ~(_BV(CS12) | _BV(CS11) | _BV(CS10)); // Stop the timer for the moment
+	TCNT1 = 0; // Reset the timer
+	TCCR1A &= ~(_BV(COM1A0) | _BV(COM1A0) | _BV(COM1B1) | _BV(COM1B0)); //Release control of OC1A / OC1B
+	TIMSK1 &= ~_BV(OCIE1A);
 }
 
 typedef enum
@@ -297,13 +258,6 @@ typedef struct
 } DCCPacket;
 
 volatile DCCPacket nextDCCPacket;  // This is the next packet the DCC ISR will send when ready
-
-typedef struct
-{
-	
-	
-}
-
 
 void dcc_scheduler()
 {
@@ -414,11 +368,22 @@ void dc_init()
 	// DC speed and direction are set by which OCx output drops low
 	OCR1A = OCR1B = ICR1 = BASE_DC_PWM_PERIOD;
 
-	TCCR1B &= ~(_BV(CS12) | _BV(CS11) | _BV(CS10)); // Stop the timer for the moment
+	TCCR1B = 0; // Stop the timer for the moment
 	TCNT1 = 0; // Reset the timer
 
 	TCCR1A = _BV(COM1A1) | _BV(COM1B1) | _BV(WGM11); // Both OC1A and OC2A high until match
 	TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS10);
+}
+
+void dc_stop()
+{
+	PORTD &= ~(_BV(PD4) | _BV(PD5));  // Both low for driver high impedence
+	DDRD |= _BV(PD4) | _BV(PD5);
+	
+	TCCR1B = 0; // Stop the timer for the moment
+	TCNT1 = 0; // Reset the timer
+	TCCR1A = 0; //Release control of OC1A / OC1B
+	TIMSK1 &= ~_BV(OCIE1A);
 }
 
 // Speed ranges 0-126 (matches DCC)
@@ -462,24 +427,15 @@ ISR(TIMER3_COMPA_vect)
 {
 	static uint8_t ticks = 0;
 
-	if (ticks & 0x01)
-		status |= STATUS_READ_INPUTS;
+	if (++ticks & 0x01)
+		eventFlags |= EVENT_TIME_READ_INPUTS;
 
-	if (++ticks >= 10)
+	if (ticks >= 10)
 	{
 		ticks = 0;
-		if (STATUS_FAST_ACTIVE == (status & (STATUS_FAST_ACTIVE | STATUS_FAST_HOLDING)))
-		{
-			fastDecisecs += scaleFactor / 10;
-			scaleTenthsAccum += scaleFactor % 10;
-			if (scaleTenthsAccum > 10)
-			{
-				fastDecisecs++;
-				scaleTenthsAccum -= 10;
-			}
-		}
 		decisecs++;
 		screenUpdateDecisecs++;
+		eventFlags |= EVENT_TIME_READ_ADCS | EVENT_TIME_ADJUST_SPEED;
 	}
 }
 
@@ -498,16 +454,37 @@ void lcd_backlightOff()
 }
 
 #define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
+#define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
+
+#define SOFTKEY_1 0x01
+#define SOFTKEY_2 0x02
+#define SOFTKEY_3 0x04
+#define SOFTKEY_4 0x08
+#define FAULT_IN  0x20
+#define SENSOR_LEFT  0x40
+#define SENSOR_RIGHT 0x80
+
 
 void initializeSwitches(void)
 {
-	DDRC &= ~(PANEL_SWITCH_MASK);  // Make inputs
+	DDRC &= ~(PANEL_SWITCH_MASK);  // Make panel switches inputs
 	PORTC |= (PANEL_SWITCH_MASK);  // Turn on pull-ups
+	DDRD &= ~(SENSOR_INPUT_MASK);  // Make sensor input connections inputs
+	PORTD |= (SENSOR_INPUT_MASK);  // Turn on pull-ups (already has externals)
+	
+	DDRD &= ~(_BV(PD2)); // Fault input
+	PORTD |= _BV(PD2); // Fault input
 }
 
 uint8_t readSwitches()
 {
-	return (PINC & PANEL_SWITCH_MASK)>>2;
+	uint8_t sensors = (PIND & SENSOR_INPUT_MASK);
+	uint8_t switches = ((PINC & PANEL_SWITCH_MASK)>>2);
+	uint8_t fault = (PIND & _BV(PD2))?0x20:0x00;
+	// We want the upper two bits of sensors and the lower four of switches
+	// These are active low, so we need to be careful how we put them together
+	
+	return (fault & 0x20) | (sensors & 0xC0) | (switches & 0x0F);
 }
 
 void init(void)
@@ -516,7 +493,7 @@ void init(void)
 	MCUSR = 0;
 	wdt_reset();
 	wdt_enable(WDTO_1S);
-
+	eventFlags = 0;
 	wdt_reset();
 
 	memset((uint8_t*)nextDCCPacket.data, 0, sizeof(nextDCCPacket.data));
@@ -531,7 +508,7 @@ void init(void)
 
 	// Set up tick timer
 	initialize100HzTimer();
-
+	initializeADC();
 	// Enable interrupts
 	sei();
 }
@@ -544,9 +521,9 @@ void drawSplashScreen()
 	//               01234567890123456789
 	//                        ||
 	lcd_gotoxy(0,0);
-	lcd_puts_p(PSTR(" The MotorMan  v1.0 "));
+	lcd_puts_p(PSTR(" The Motorman  v1.0 "));
 	lcd_gotoxy(0,1);
-	lcd_puts_p(PSTR(""));
+	lcd_puts_p(PSTR(" Shuttle Controller "));
 	lcd_gotoxy(0,2);
 	lcd_puts_p(PSTR("Iowa Scaled Eng 2020"));
 	lcd_gotoxy(0,3);
@@ -651,49 +628,293 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 	lcd_puts_p(key4Text);
 }
 
+#define TRACK_STATUS_SENSOR_LEFT     0x80
+#define TRACK_STATUS_SENSOR_RIGHT    0x40
+#define TRACK_STATUS_FAULTED         0x20
+#define TRACK_STATUS_STOPPED         0x01
+
+typedef struct
+{
+	uint16_t address;
+	bool shortDCCAddress;
+	uint16_t maxSpeed;
+	uint8_t rampRate;
+	uint32_t fwdFunctions;
+	uint32_t revFunctions;
+	uint32_t allFunctions;
+} LocoConfig;
+
+
+#define DIRECTION_FORWARD 0
+#define DIRECTION_REVERSE 1
+
+typedef struct
+{
+	// Loaded from EEP
+	bool dcMode;
+	uint8_t activeLocoConfig;
+	bool stopped;
+	
+	// Runtime elements
+	int16_t speed;
+	int16_t requestedSpeed;
+	uint8_t direction;
+	bool outputDriverFault;
+
+} OpsConfiguration;
+
+void loadOpsConfiguration(OpsConfiguration* opsConfig)
+{
+	opsConfig->dcMode = false;
+	opsConfig->stopped = false;
+	
+	if(opsConfig->dcMode)
+		opsConfig->activeLocoConfig = 0;
+	else
+		opsConfig->activeLocoConfig = 1; // FIXME!  Load this!
+	
+	opsConfig->speed = 0;
+	opsConfig->requestedSpeed = 10000;
+
+	opsConfig->outputDriverFault = false;
+}
+
+void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
+{
+	locoConfig->address = 3;
+	locoConfig->shortDCCAddress = true;
+	
+	locoConfig->maxSpeed = 10000;
+	locoConfig->rampRate = 20; // 20 seconds
+
+	locoConfig->fwdFunctions = 1; // F0
+	locoConfig->revFunctions = 1; // F0
+	locoConfig->allFunctions = 0; // Fnone
+}
+
+#define ANALOG_CHANNEL_PHASE_A_VOLTS  0
+#define ANALOG_CHANNEL_PHASE_B_VOLTS  1
+#define ANALOG_CHANNEL_INPUT_VOLTS    2
+#define ANALOG_CHANNEL_TRACK_CURRENT  3
+
+
 int main(void)
 {
 	uint8_t buttonsPressed=0;
 	uint8_t configMenuOption = 0;
 	uint16_t kloopsPerSec=0;
-	uint8_t speedy = 0;
+	
+	char screenLineBuffer[21];
+
+	uint8_t configSaveU8;
+
 	ScreenState screenState = SCREEN_MAIN_DRAW;
+	LocoConfig currentLoco;
+	OpsConfiguration opsConfig;
+	DebounceState d;
+	
+	
+	
 	// Application initialization
 	init();
-	dcc_init();
+	initDebounceState(&d);
+	loadOpsConfiguration(&opsConfig);
+	loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
+	
+	if (opsConfig.dcMode)
+		dc_init();
+	else
+		dcc_init();
 	
 	drawSplashScreen();
 	wdt_reset();
 	loopCount = 0;
 	kloopsPerSec = 0;
 
-	
+	uint8_t trackStatus = 0;
+
+	uint16_t inputVoltage=0, phaseAVoltage=0, phaseBVoltage=0, trackCurrent=0, trackVoltage=0;
+
 	while (1)
 	{
+		bool updateData = false;
 		loopCount++;
 		wdt_reset();
 
-		if (status & STATUS_READ_INPUTS)
+		if (eventFlags & EVENT_TIME_READ_INPUTS)
 		{
-			status &= ~(STATUS_READ_INPUTS);
-			buttonsPressed = debounce(readSwitches());
-			speedy++;
-//			dc_setSpeedAndDir(speedy & 0x7F, speedy & 0x80);
+			eventFlags &= ~(EVENT_TIME_READ_INPUTS);
+			
+			buttonsPressed = debounce(readSwitches(), &d);
+
+			opsConfig.outputDriverFault = (d.debounced_state & FAULT_IN);
+			if (buttonsPressed & FAULT_IN)
+				updateData = true;
 		}
 
+		if (eventFlags & EVENT_TIME_ADJUST_SPEED)
+		{
+			eventFlags &= ~(EVENT_TIME_ADJUST_SPEED);
+			
+			// Time to re-evaluate speed
+			if (opsConfig.stopped)  // If a stop is requested, immediately set speed to 0
+				opsConfig.speed = 0;
+			else if (opsConfig.requestedSpeed != opsConfig.speed)
+			{
+				// Ramp rate is the number of deciseconds it should take to go from 0-max
+				// What we need is the speed change per decisecond
+				uint16_t incrementsPerDecisec = currentLoco.maxSpeed / currentLoco.rampRate;
+				
+				// Which is less, the current difference or the ramp increment?
+				uint16_t increment = min(abs(opsConfig.speed - opsConfig.requestedSpeed), incrementsPerDecisec);
+				
+				if (opsConfig.requestedSpeed > opsConfig.speed)
+					opsConfig.speed += increment;
+				else if (opsConfig.requestedSpeed < opsConfig.speed)
+					opsConfig.speed -= increment;
+			}
+
+			// Set speed / direction
+			if (opsConfig.dcMode)
+				dc_setSpeedAndDir(abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1);
+//			else  FIXME: DCC set speed/dir/functions
+		}
+
+
+		if ((eventFlags & EVENT_TIME_READ_ADCS) && (eventFlags & EVENT_ANALOG_READ_COMPLETE))
+		{
+			// Analog readings are done - go get and process the values
+			
+			// ADC decivolts = adcValue[] * 33 / 1023
+			// Real volts to ADC decivolts = ADC * 11
+			// adcValue[ANALOG_CHANNEL_INPUT_VOLTS] * 33 * 11 / 1023
+			// simplified, that's adc * 11 / 31
+			
+			// Iin = adcdecivolts / (20 * 0.07 * 10)
+			// Iin = (adc * 33) / (1023 * 14)
+			// dIin = adc * 10 / 434
+			// adc decivolts = adc * 33 / 1023
+			
+			inputVoltage = adcValue[ANALOG_CHANNEL_INPUT_VOLTS] * 11 / 31;
+			phaseAVoltage = adcValue[ANALOG_CHANNEL_PHASE_A_VOLTS] * 11 / 31;
+			phaseBVoltage = adcValue[ANALOG_CHANNEL_PHASE_B_VOLTS] * 11 / 31;
+			trackCurrent = adcValue[ANALOG_CHANNEL_TRACK_CURRENT] * 10 / 434;
+			if (opsConfig.dcMode)
+				trackVoltage = max(phaseAVoltage, phaseBVoltage);
+			else
+				trackVoltage = (phaseAVoltage + phaseBVoltage);
+			
+			// Restart ADC for another round
+			eventFlags &= ~(EVENT_ANALOG_READ_COMPLETE | EVENT_TIME_READ_ADCS);
+			ADCSRA |= _BV(ADSC);
+			updateData = true;
+		}
+		
+		
 		switch(screenState)
 		{
-		
 			case SCREEN_MAIN_DRAW:
-				drawSoftKeys_p(FAST_MODE?PSTR("REAL"):PSTR("FAST"),  FAST_MODE?(FASTHOLD_MODE?PSTR("RUN"):PSTR("HOLD")):PSTR(""), FAST_MODE?PSTR("RST"):PSTR(""), PSTR("CONF"));
+				lcd_clrscr();
+//  Main Screen
+//  00000000001111111111
+//  01234567890123456789
+// [ADR:xxxx vv.vV a.aaA]
+// [SPD:Fnnn  REQ:Fnnn  ]
+// [RMP:yy.ys SENSOR:-/-]
+// [LOAD REV  STOP CONF ]
+				lcd_gotoxy(0, 0);
+				lcd_puts_p(PSTR("ADR:"));
+				if (opsConfig.dcMode)
+					lcd_puts_p(PSTR("*DC*"));
+				else
+				{
+					if (currentLoco.shortDCCAddress)
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), "s%03d", (currentLoco.address & 0xFF));
+					else
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%04d", currentLoco.address);
+					lcd_puts(screenLineBuffer);
+				}
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("SPD:"));
+				lcd_gotoxy(10,1);
+				lcd_puts_p(PSTR("REQ:"));
+
+				// Display ramp rate
+				lcd_gotoxy(0, 2);
+				lcd_puts_p(PSTR("RMP:"));
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d.%01ds", currentLoco.rampRate/10, currentLoco.rampRate%10);
+
+				// Display sensor input status
+				lcd_gotoxy(10, 2);
+				lcd_puts_p(PSTR("SENSOR:"));
+				// Intentional fall-through
+
+			case SCREEN_MAIN_REFRESH:
+				lcd_gotoxy(9, 0);
+				if (trackStatus & TRACK_STATUS_FAULTED)
+				{
+					lcd_puts_p(PSTR("** FAULT **"));
+				} else {
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d.%01dV %01d.%02dA", trackVoltage/10, trackVoltage%10, trackCurrent/100, trackCurrent%100);
+					lcd_puts(screenLineBuffer);
+				}
+				
+				
+				// Display speed
+				lcd_gotoxy(4, 1);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d", (opsConfig.speed<0)?'R':'F', abs(opsConfig.speed)/100);
+				lcd_puts(screenLineBuffer);
+				lcd_gotoxy(14, 1);
+				if (!opsConfig.stopped)
+				{
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d", (opsConfig.requestedSpeed<0)?'R':'F', abs(opsConfig.requestedSpeed)/100);
+					lcd_puts(screenLineBuffer);
+				}
+				else
+					lcd_puts_p(PSTR("STOP"));
+				
+				lcd_gotoxy(17,2);
+				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_LEFT)?'*':'-');
+				lcd_putc('/');
+				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'*':'-');
+				
+				drawSoftKeys_p(opsConfig.dcMode?PSTR(""):PSTR("LOAD"),  PSTR("F<>R"), (opsConfig.stopped)?PSTR("RUN!"):PSTR("STOP"), PSTR("CONF"));
 				buttonsPressed = 0;
 				screenState = SCREEN_MAIN_IDLE;
 				break;
 
+
+
 			case SCREEN_MAIN_IDLE:
-				if (SOFTKEY_1 & buttonsPressed)
-				{ } // Yeah, whateer
-				// Buttons handled, clear
+				if(updateData)
+					screenState = SCREEN_MAIN_REFRESH;
+			
+				if ((SOFTKEY_1 & buttonsPressed) && !opsConfig.dcMode)
+				{
+					// The "Load" key only works in DCC mode
+					// Do stuff here to change to load configuration screen
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					opsConfig.stopped = !opsConfig.stopped;
+					if (opsConfig.stopped)
+					{
+						opsConfig.speed = 0;
+					}
+					
+					screenState = SCREEN_MAIN_REFRESH;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Load Configuration menu
+					screenState = SCREEN_CONF_MENU_DRAW;
+					configMenuOption = 0;
+				}
+
 				buttonsPressed = 0;
 				break;
 
@@ -749,6 +970,56 @@ int main(void)
 				// Buttons handled, clear
 				buttonsPressed = 0;
 				break;
+
+			case SCREEN_CONF_OUTPUT_SETUP:
+				lcd_clrscr();
+				configSaveU8 = (opsConfig.dcMode)?1:0;
+				lcd_gotoxy(0,0);
+				lcd_puts("DC / DCC Mode");
+				drawSoftKeys_p(PSTR(" DC "),  PSTR("DCC"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_OUTPUT_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] DC Trk Output"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] DCC Trk Output"));
+				lcd_gotoxy(1, (configSaveU8)?1:2);
+				lcd_putc('*');
+				screenState = SCREEN_CONF_OUTPUT_IDLE;
+				break;
+
+			case SCREEN_CONF_OUTPUT_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8 = 1;
+					screenState = SCREEN_CONF_OUTPUT_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8 = 0;
+					screenState = SCREEN_CONF_OUTPUT_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.dcMode != (bool)configSaveU8))
+					{
+						opsConfig.dcMode = (bool)configSaveU8;
+						if(opsConfig.dcMode)
+						{
+							dc_init();
+						} else {
+							dcc_init();
+						}
+//						storeConfiguration(status);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
 
 			default:
 				lcd_gotoxy(0,1);
