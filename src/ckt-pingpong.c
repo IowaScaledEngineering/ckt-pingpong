@@ -125,12 +125,13 @@ ISR(ADC_vect)
 	static uint8_t count = 0;
 	
 	accumulator[workingChannel++] += ADC;
-	ADMUX = (ADMUX & 0xF0) | ((workingChannel+4) & 0x07);
+
 	if (4 == workingChannel)
 	{
 		count++;
 		workingChannel = 0;
 	}
+	ADMUX = (ADMUX & 0xF0) | ((workingChannel+4) & 0x07);
 	
 	if (count >= 64)
 	{
@@ -798,7 +799,7 @@ int main(void)
 			inputVoltage = adcValue[ANALOG_CHANNEL_INPUT_VOLTS] * 11 / 31;
 			phaseAVoltage = adcValue[ANALOG_CHANNEL_PHASE_A_VOLTS] * 11 / 31;
 			phaseBVoltage = adcValue[ANALOG_CHANNEL_PHASE_B_VOLTS] * 11 / 31;
-			trackCurrent = adcValue[ANALOG_CHANNEL_TRACK_CURRENT] * 10 / 434;
+			trackCurrent = adcValue[ANALOG_CHANNEL_TRACK_CURRENT] * 100 / 434;
 			if (opsConfig.dcMode)
 				trackVoltage = max(phaseAVoltage, phaseBVoltage);
 			else
