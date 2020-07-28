@@ -82,9 +82,10 @@ typedef struct
 	uint8_t debounced_state;
 } DebounceState;
 
-void initDebounceState(DebounceState* d)
+void initDebounceState(DebounceState* d, uint8_t initialState)
 {
-	d->clock_A = d->clock_B = d->debounced_state = 0;
+	d->clock_A = d->clock_B = 0;
+	d->debounced_state = initialState;
 }
 
 uint8_t debounce(uint8_t raw_inputs, DebounceState* d)
@@ -660,8 +661,6 @@ typedef struct
 	int16_t speed;
 	int16_t requestedSpeed;
 	uint8_t direction;
-	bool outputDriverFault;
-
 } OpsConfiguration;
 
 void loadOpsConfiguration(OpsConfiguration* opsConfig)
@@ -676,8 +675,6 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 	
 	opsConfig->speed = 0;
 	opsConfig->requestedSpeed = 10000;
-
-	opsConfig->outputDriverFault = false;
 }
 
 void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
@@ -704,21 +701,21 @@ int main(void)
 	uint8_t buttonsPressed=0;
 	uint8_t configMenuOption = 0;
 	uint16_t kloopsPerSec=0;
-	
+	uint8_t trackStatus = 0;
+	uint16_t inputVoltage=0, phaseAVoltage=0, phaseBVoltage=0, trackCurrent=0, trackVoltage=0;
+
 	char screenLineBuffer[21];
 
-	uint8_t configSaveU8;
+	uint8_t configSaveU8 = 0;
 
 	ScreenState screenState = SCREEN_MAIN_DRAW;
 	LocoConfig currentLoco;
 	OpsConfiguration opsConfig;
 	DebounceState d;
 	
-	
-	
 	// Application initialization
 	init();
-	initDebounceState(&d);
+	initDebounceState(&d, 0xFF); // Initialize all high since all inputs are active low
 	loadOpsConfiguration(&opsConfig);
 	loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
 	
@@ -730,11 +727,6 @@ int main(void)
 	drawSplashScreen();
 	wdt_reset();
 	loopCount = 0;
-	kloopsPerSec = 0;
-
-	uint8_t trackStatus = 0;
-
-	uint16_t inputVoltage=0, phaseAVoltage=0, phaseBVoltage=0, trackCurrent=0, trackVoltage=0;
 
 	while (1)
 	{
@@ -748,9 +740,21 @@ int main(void)
 			
 			buttonsPressed = debounce(readSwitches(), &d);
 
-			opsConfig.outputDriverFault = (d.debounced_state & FAULT_IN);
-			if (buttonsPressed & FAULT_IN)
-				updateData = true;
+			if (d.debounced_state & FAULT_IN)
+				trackStatus &= ~TRACK_STATUS_FAULTED;
+			else
+				trackStatus |= TRACK_STATUS_FAULTED;
+				
+			
+			if (d.debounced_state & SENSOR_LEFT)
+				trackStatus &= ~TRACK_STATUS_SENSOR_LEFT;
+			else
+				trackStatus |= TRACK_STATUS_SENSOR_LEFT;
+				
+			if (d.debounced_state & SENSOR_RIGHT)
+				trackStatus &= ~TRACK_STATUS_SENSOR_RIGHT;
+			else
+				trackStatus |= TRACK_STATUS_SENSOR_RIGHT;
 		}
 
 		if (eventFlags & EVENT_TIME_ADJUST_SPEED)
@@ -793,8 +797,7 @@ int main(void)
 			
 			// Iin = adcdecivolts / (20 * 0.07 * 10)
 			// Iin = (adc * 33) / (1023 * 14)
-			// dIin = adc * 10 / 434
-			// adc decivolts = adc * 33 / 1023
+			// cIin = adc * 100 / 434
 			
 			inputVoltage = adcValue[ANALOG_CHANNEL_INPUT_VOLTS] * 11 / 31;
 			phaseAVoltage = adcValue[ANALOG_CHANNEL_PHASE_A_VOLTS] * 11 / 31;
