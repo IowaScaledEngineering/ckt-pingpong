@@ -35,10 +35,10 @@ LICENSE:
 #include <util/delay.h>
 #include <util/atomic.h>
 
+#include "macros.h"
 #include "lcd.h"
-
-#define min(a,b) ((a<b)?(a):(b))
-#define max(a,b) ((a>b)?(a):(b))
+#include "dc.h"
+#include "dcc.h"
 
 // ******** Start 100 Hz Timer - Very Accurate Version
 
@@ -55,12 +55,6 @@ volatile uint8_t scaleTenthsAccum = 0;
 uint16_t scaleFactor = 10;
 volatile uint8_t eventFlags=0;
 
-uint16_t kelvinTemp = 0;
-uint8_t relHumidity = 0;
-uint8_t thVoltage = 0;
-uint8_t thAlternator = 0;
-
-
 #define EVENT_TIME_READ_INPUTS      0x01
 #define EVENT_TIME_READ_ADCS        0x02
 #define EVENT_TIME_ADJUST_SPEED     0x04
@@ -73,7 +67,6 @@ void blankCursorLine()
 	lcd_gotoxy(0,2);
 	lcd_puts_p(PSTR("                    "));
 }
-
 
 typedef struct
 {
@@ -193,317 +186,6 @@ const ConfigurationOption configurationOptions[] =
 #define NUM_RATIO_OPTIONS  (sizeof(ratioOptions)/sizeof(ConfigurationOption))
 #define NUM_CONF_OPTIONS  (sizeof(configurationOptions)/sizeof(ConfigurationOption))
 
-uint16_t one_count=115; //58us
-uint16_t zero_high_count=199; //100us
-uint16_t zero_low_count=199; //100us
-
-// 0x02B7 - 58uS 1x prescaler
-// 0x04AF - 100uS 1x prescaler
-
-#define DCC_ONE_HALF_BIT   0x02B7
-#define DCC_ONE_FULL_BIT   (DCC_ONE_HALF_BIT * 2UL)
-#define DCC_ZERO_HALF_BIT  0x04AF
-#define DCC_ZERO_FULL_BIT  (DCC_ZERO_HALF_BIT * 2UL)
-
-
-
-void dcc_init() 
-{
-	// DCC uses timer 1 in CTC mode, triggering OC1A and OC1B to toggle every
-	// half-bit.  
-	
-	PORTD &= ~(_BV(PD4) | _BV(PD5));  // High impedence on initial power up
-	DDRD |= _BV(PD4) | _BV(PD5);
-	// Set to output ones by default
-	OCR1A = OCR1B = DCC_ONE_HALF_BIT;
-
-	TCCR1B = 0;
-	TCCR1B &= ~(_BV(CS12) | _BV(CS11) | _BV(CS10)); // Stop the timer for the moment
-	TCNT1 = 0; // Reset the timer
-
-	TCCR1A = _BV(COM1A0) | _BV(COM1B0); // OC1A and OC1B both toggle
-
-	// If the outputs are the same, toggle ones
-	if ((bool)(PIND & _BV(PD4)) == (bool)(PIND & _BV(PD5)))
-		TCCR1C = _BV(FOC1A);
-
-	TCCR1B = _BV(WGM12) | _BV(CS10);
-	TIMSK1 |= _BV(OCIE1A);
-}
-
-void dcc_stop()
-{
-	PORTD &= ~(_BV(PD4) | _BV(PD5));  // Both low for driver high impedence
-	DDRD |= _BV(PD4) | _BV(PD5);
-	
-	TCCR1B &= ~(_BV(CS12) | _BV(CS11) | _BV(CS10)); // Stop the timer for the moment
-	TCNT1 = 0; // Reset the timer
-	TCCR1A &= ~(_BV(COM1A0) | _BV(COM1A0) | _BV(COM1B1) | _BV(COM1B0)); //Release control of OC1A / OC1B
-	TIMSK1 &= ~_BV(OCIE1A);
-}
-
-typedef enum
-{
-	DCC_SEND_PREAMBLE = 0,
-	DCC_SEND_START_BIT = 1,
-	DCC_SEND_DATA_BYTE = 2,
-	DCC_SEND_STOP = 3
-	
-} DCCXmitState;
-
-#define DCC_PACKET_MAX_BYTES  6
-#define DCC_PREAMBLE_BITS     14
-typedef struct 
-{
-	uint8_t data[DCC_PACKET_MAX_BYTES];
-	uint8_t len;
-} DCCPacket;
-
-volatile DCCPacket nextDCCPacket;  // This is the next packet the DCC ISR will send when ready
-
-
-
-uint16_t dcc_currentAddr;
-uint8_t dcc_currentSpeed;
-uint32_t dcc_currentFuncs;
-bool dcc_shortAddr;
-
-uint8_t dcc_setSpeedAndDir(uint16_t addr, bool isShortAddr, uint8_t speed, uint8_t direction, uint32_t functions)
-{
-	//001CCCCC  0  DDDDDDDD
-	//CCCCC = 11111 - speed
-	//U0000000 - U=1 forward, 0=rev
-	//U0000001 - emergency stopped
-	//11 000000-11 100111
-	//Addr byte 2
-	speed = min(speed, 126);
-
-	if (speed == 0)
-		dcc_currentSpeed = 0;
-	else if (speed >= 1 && speed < 127)
-		dcc_currentSpeed = speed + 1;
-
-	// In DCC, a high bit on the speed is forward
-	dcc_currentSpeed |= (direction?0x00:0x80);
-
-	if (isShortAddr)
-	{
-		dcc_currentAddr = max(1, min(addr, 127));
-		dcc_shortAddr = true;
-	} else {
-		dcc_currentAddr = max(1, min(addr, 9999));
-		dcc_shortAddr = false;
-	}
-	dcc_currentFuncs = functions;
-	dcc_shortAddr = isShortAddr;
-	
-	return 0;
-}
-
-void dcc_scheduler()
-{
-	static uint8_t dccStator = 0;
-	uint8_t i = 0;
-	uint8_t len = 0;
-
-	// If there's no space in the "next" buffer yet, just get out
-	if (nextDCCPacket.len != 0)
-		return;
-
-	if (dcc_shortAddr)
-	{
-		nextDCCPacket.data[len++] = (0x7F & dcc_currentAddr);
-	} else {
-		nextDCCPacket.data[len++] = 0b11000000 | (0x3F & (dcc_currentAddr>>8));
-		nextDCCPacket.data[len++] = dcc_currentAddr & 0xFF;
-	}
-
-	switch(dccStator++)
-	{
-		case 0: // Send speed/dir
-			nextDCCPacket.data[len++] = 0b00111111; // Advanced operations instruction, 128 speed step
-			nextDCCPacket.data[len++] = dcc_currentSpeed;
-			break;
-
-		case 1:
-		case 3:
-		case 5:
-		case 7:
-		case 9:
-		case 11:
-			nextDCCPacket.data[0] = 0xFF;
-			nextDCCPacket.data[1] = 0x00;
-			nextDCCPacket.len = 2;
-			break;
-		
-		case 2:
-			i = ((dcc_currentFuncs & 0x1E)>>1) | ((dcc_currentFuncs & 0x01)?0x10:0x00);
-			nextDCCPacket.data[len++] = 0b10000000 | (0x1F & i); // Function group 1 (F0-F4)
-			break;
-			
-		case 4:
-			nextDCCPacket.data[len++] = 0b10100000 | (0x0F & (dcc_currentFuncs>>5)); // Function group 2 (F5-F8)
-			break;
-
-		case 6:
-			nextDCCPacket.data[len++] = 0b10110000 | (0x0F & (dcc_currentFuncs>>9)); // Function group 2 (F5-F8)
-			break;
-
-		case 8:
-			nextDCCPacket.data[len++] = 0b11011110;
-			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>13); // Function group 2 (F5-F8)
-			break;
-
-		case 10:
-			nextDCCPacket.data[len++] = 0b11011111;
-			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>20); // Function group 2 (F5-F8)
-			break;
-
-		
-		default:
-			dccStator = 0;
-			len = 0;
-			break;
-	}
-
-	if (len)
-		nextDCCPacket.len = len; // Once we set len, need to not touch the buffer until the ISR clears it
-}
-
-
-ISR(TIMER1_COMPA_vect)
-{
-	static uint8_t phase = 0; // This indicates whether we're on the first or second half of the bit
-	static uint8_t nextBit = 1; // This is the bit to send that the previous ISR call computed
-	static DCCXmitState dccState = DCC_SEND_PREAMBLE;
-	static uint8_t preambleBitsRemaining = DCC_PREAMBLE_BITS+2; // Has a couple extra so we can skip the stop bits
-	static uint8_t dataByte = 0;
-	static uint8_t dataBit = 7;
-	static DCCPacket currentPacket;
-	
-	if (++phase & 0x01) // Second half of the bit, do nothing
-		return;
-
-	// Set the OCR registers first, so that we don't miss a comparison
-	OCR1A = OCR1B = (nextBit)?DCC_ONE_HALF_BIT:DCC_ZERO_HALF_BIT;
-
-	// Now that we've made the next bit the current one, calculate the next
-	// bit
-	switch(dccState)
-	{
-		case DCC_SEND_PREAMBLE:
-			nextBit = 1;
-			if (--preambleBitsRemaining == 0)
-			{
-				if (0 == nextDCCPacket.len)
-				{
-					// We have nothing to send ready to go, send an idle packet
-					currentPacket.data[0] = 0xFF;
-					currentPacket.data[1] = 0x00;
-					currentPacket.data[2] = 0xFF;
-					currentPacket.len = 3;
-				} else {
-					// Handle loading up currentPacket
-					currentPacket.len = min(nextDCCPacket.len, DCC_PACKET_MAX_BYTES-1);
-					memcpy(currentPacket.data, (uint8_t*)nextDCCPacket.data, currentPacket.len);
-					nextDCCPacket.len = 0; // Reset the length to indicate the buffer's empty
-
-					// Calculate checksum
-					currentPacket.data[currentPacket.len] = currentPacket.data[0];
-					for (uint8_t i=1; i<currentPacket.len; i++)
-						currentPacket.data[currentPacket.len] ^= currentPacket.data[i];
-					currentPacket.len++;
-				}
-
-				dataByte = 0;
-				preambleBitsRemaining = DCC_PREAMBLE_BITS+2;
-				dccState = DCC_SEND_START_BIT;
-			}
-			break;
-			
-		case DCC_SEND_START_BIT:
-			nextBit = 0;
-			dataBit = 7;
-			dccState = DCC_SEND_DATA_BYTE;
-			break;
-
-		case DCC_SEND_DATA_BYTE:
-			nextBit = (currentPacket.data[dataByte] & (1<<dataBit))?1:0;
-			
-			if (0 == dataBit)
-			{
-				dataByte++;
-				if (dataByte >= currentPacket.len)
-					dccState = DCC_SEND_PREAMBLE; // A longer preamble can include the stop bit
-				else
-					dccState = DCC_SEND_START_BIT;
-			} else {
-				dataBit--;
-			}
-			break;
-
-		default:
-			// No clue why we're here, send a 1, go back to preamble
-			nextBit = 1;
-			preambleBitsRemaining = DCC_PREAMBLE_BITS+2;
-			dccState = DCC_SEND_PREAMBLE;
-			break;
-	}
-}
-
-#define BASE_DC_PWM_PERIOD 0x0257 // 20kHz at 12MHz, div 1
-
-void dc_init()
-{
-	// DC Mode uses timer 1 in fast PWM mode
-	// ICR1 provides the base frequency - in this case, ~20kHz
-	PORTD |= _BV(PD4) | _BV(PD5);  // Set both high - this gives lows on both track outputs
-	DDRD |= _BV(PD4) | _BV(PD5);
-
-	TIMSK1 &= ~_BV(OCIE1A); // No interrupts in DC mode
-
-	// DC speed and direction are set by which OCx output drops low
-	OCR1A = OCR1B = ICR1 = BASE_DC_PWM_PERIOD;
-
-	TCCR1B = 0; // Stop the timer for the moment
-	TCNT1 = 0; // Reset the timer
-
-	TCCR1A = _BV(COM1A1) | _BV(COM1B1) | _BV(WGM11); // Both OC1A and OC2A high until match
-	TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS10);
-}
-
-void dc_stop()
-{
-	PORTD &= ~(_BV(PD4) | _BV(PD5));  // Both low for driver high impedence
-	DDRD |= _BV(PD4) | _BV(PD5);
-	
-	TCCR1B = 0; // Stop the timer for the moment
-	TCNT1 = 0; // Reset the timer
-	TCCR1A = 0; //Release control of OC1A / OC1B
-	TIMSK1 &= ~_BV(OCIE1A);
-}
-
-// Speed ranges 0-126 (matches DCC)
-// Direction is 0 for forward, 1 for reverse
-
-void dc_setSpeedAndDir(uint8_t speed, uint8_t direction)
-{
-	uint16_t ocValForSpeed = 0;
-	
-	speed = min(speed, 126);
-	
-	ocValForSpeed = (BASE_DC_PWM_PERIOD * (uint32_t)speed) / 126L;
-	if (direction)
-	{
-		OCR1A = BASE_DC_PWM_PERIOD - ocValForSpeed;
-		OCR1B = BASE_DC_PWM_PERIOD;
-	} else {
-		OCR1A = BASE_DC_PWM_PERIOD;
-		OCR1B = BASE_DC_PWM_PERIOD - ocValForSpeed;
-	}
-}
-
-
 void initialize100HzTimer(void)
 {
 	// Set up timer 3 for 100Hz interrupts
@@ -518,7 +200,6 @@ void initialize100HzTimer(void)
 	decisecs = 0;
 	screenUpdateDecisecs = 0;
 }
-
 
 ISR(TIMER3_COMPA_vect)
 {
