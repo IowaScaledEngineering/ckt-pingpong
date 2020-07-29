@@ -50,9 +50,6 @@ LICENSE:
 
 volatile uint16_t decisecs=0;
 volatile uint16_t screenUpdateDecisecs=0;
-volatile uint16_t fastDecisecs=0;
-volatile uint8_t scaleTenthsAccum = 0;
-uint16_t scaleFactor = 10;
 volatile uint8_t eventFlags=0;
 
 #define EVENT_TIME_READ_INPUTS      0x01
@@ -162,6 +159,19 @@ typedef enum
 	SCREEN_CONF_OUTPUT_DRAW  = 101,
 	SCREEN_CONF_OUTPUT_IDLE  = 102,
 
+	SCREEN_CONF_LOCOLIST_SETUP = 105,
+	SCREEN_CONF_LOCOLIST_DRAW  = 106,
+	SCREEN_CONF_LOCOLIST_IDLE  = 107,
+
+	SCREEN_CONF_LOCOSLOT1_SETUP = 110,
+	SCREEN_CONF_LOCOSLOT1_DRAW  = 111,
+	SCREEN_CONF_LOCOSLOT1_IDLE  = 112,
+
+	SCREEN_CONF_LOCOSLOT2_SETUP = 115,
+	SCREEN_CONF_LOCOSLOT2_DRAW  = 116,
+	SCREEN_CONF_LOCOSLOT2_IDLE  = 117,
+
+
 	SCREEN_CONF_DIAG_SETUP = 250,
 	SCREEN_CONF_DIAG_DRAW  = 251,
 	SCREEN_CONF_DIAG_IDLE  = 252,
@@ -180,11 +190,13 @@ typedef struct
 const ConfigurationOption configurationOptions[] = 
 {
   { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
+  { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
 };
 
-#define NUM_RATIO_OPTIONS  (sizeof(ratioOptions)/sizeof(ConfigurationOption))
 #define NUM_CONF_OPTIONS  (sizeof(configurationOptions)/sizeof(ConfigurationOption))
+
+#define NUM_LOCO_OPTIONS 15
 
 void initialize100HzTimer(void)
 {
@@ -354,30 +366,6 @@ void drawSplashScreen()
 // yy.y = ramp time
 
 
-//  Loco Configuration Screen 1
-//  00000000001111111111
-//  01234567890123456789
-// [nn  ADDR  MAX  RAMP ]
-// [    xxxx  nnn% yy.ys]
-// [    ^               ]
-// [ +++  >>> NEXT CNCL ]
-// nn = locomotive slot number or DC (slot 0)
-// xxxx = address (or *DC* for DC)
-// nnn = max speed %
-// yy.y = ramp time
-
-//  Loco Configuration Screen 2
-//  00000000001111111111
-//  01234567890123456789
-// [nn   FWD FWD REV REV]
-// [ Fnn Fnn Fnn Fnn Fnn]
-// [     ^              ]
-// [ +++  >>> SAVE CNCL ]
-// nn = locomotive slot number or DC (slot 0)
-// xxxx = address (or *DC* for DC)
-// nnn = max speed %
-// yy.y = ramp time
-
 
 //  Diagnostic Screen
 //  00000000001111111111
@@ -415,7 +403,7 @@ typedef struct
 {
 	uint16_t address;
 	bool shortDCCAddress;
-	uint16_t maxSpeed;
+	uint8_t maxSpeed;
 	uint8_t rampRate;
 	uint32_t fwdFunctions;
 	uint32_t revFunctions;
@@ -458,13 +446,21 @@ void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
 	locoConfig->address = 600;
 	locoConfig->shortDCCAddress = false;
 	
-	locoConfig->maxSpeed = 2000;
+	locoConfig->maxSpeed = 20;
 	locoConfig->rampRate = 20; // 20 seconds
 
 	locoConfig->fwdFunctions = 1; // F0
 	locoConfig->revFunctions = 1; // F0
 	locoConfig->allFunctions = 0; // Fnone
 }
+
+
+bool saveLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
+{
+	// Should probably do something here.
+	return true;
+}
+
 
 #define ANALOG_CHANNEL_PHASE_A_VOLTS  0
 #define ANALOG_CHANNEL_PHASE_B_VOLTS  1
@@ -483,6 +479,8 @@ typedef enum
 } OpState;
 
 
+
+
 int main(void)
 {
 	uint8_t buttonsPressed=0;
@@ -492,11 +490,11 @@ int main(void)
 	uint16_t inputVoltage=0, phaseAVoltage=0, phaseBVoltage=0, trackCurrent=0, trackVoltage=0;
 
 	char screenLineBuffer[21];
-
 	uint8_t configSaveU8 = 0;
+	uint8_t locoSlotOption = 0;
 	OpState opState = STATE_LEARN;
 	ScreenState screenState = SCREEN_MAIN_DRAW;
-	LocoConfig currentLoco;
+	LocoConfig currentLoco, tmpLocoConfig;
 	OpsConfiguration opsConfig;
 	
 	uint8_t endStopDelay = 0;
@@ -519,7 +517,7 @@ int main(void)
 	loopCount = 0;
 
 	opState = STATE_LEARN;
-	opsConfig.requestedSpeed = currentLoco.maxSpeed;
+	opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
 
 	while (1)
 	{
@@ -599,7 +597,7 @@ int main(void)
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_FWDDECEL;
 				} else {
-					opsConfig.requestedSpeed = currentLoco.maxSpeed;
+					opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed*100;
 				}
 				break;
 
@@ -609,7 +607,7 @@ int main(void)
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVDECEL;
 				} else {
-					opsConfig.requestedSpeed = -currentLoco.maxSpeed;
+					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
 				}
 				break;
 
@@ -652,7 +650,7 @@ int main(void)
 			{
 				// Ramp rate is the number of deciseconds it should take to go from 0-max
 				// What we need is the speed change per decisecond
-				uint16_t incrementsPerDecisec = currentLoco.maxSpeed / currentLoco.rampRate;
+				uint16_t incrementsPerDecisec = (int16_t)currentLoco.maxSpeed*100 / currentLoco.rampRate;
 				
 				// Which is less, the current difference or the ramp increment?
 				uint16_t increment = min(abs(opsConfig.speed - opsConfig.requestedSpeed), incrementsPerDecisec);
@@ -819,6 +817,285 @@ int main(void)
 
 				buttonsPressed = 0;
 				break;
+
+			case SCREEN_CONF_LOCOLIST_SETUP:
+				locoSlotOption = 0;
+				break;
+			case SCREEN_CONF_LOCOLIST_DRAW:
+				lcd_clrscr();
+				drawSoftKeys_p((locoSlotOption>0)?PSTR(" UP "):PSTR(""),  (locoSlotOption < NUM_CONF_OPTIONS-1)?PSTR("DOWN"):PSTR(""), PSTR("SLCT"), PSTR("BACK"));
+				{
+					uint8_t i, baseOptionCount = (locoSlotOption / 3) * 3;
+					for(i=0; i<3; i++)
+					{
+						if (i+baseOptionCount >= NUM_LOCO_OPTIONS)
+							continue;
+						if (i+baseOptionCount == locoSlotOption)
+						{
+							lcd_gotoxy(0, i);
+							lcd_putc('>');
+						}
+
+						loadLocoConfiguration(i+baseOptionCount, &tmpLocoConfig);
+						lcd_gotoxy(2, i);
+						if (0 == i+baseOptionCount)
+							snprintf(screenLineBuffer, sizeof(screenLineBuffer), "00 **DC** %03d %02d.%01d", tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+						else
+						{
+							// Get locomotive configuration details
+							snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
+								tmpLocoConfig.shortDCCAddress?"%02d A:s%03d %03d %02d.%01d":"%02d A:%04d %03d %02d.%01d", 
+								i+baseOptionCount, tmpLocoConfig.address, tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+						}
+						lcd_puts(screenLineBuffer);
+					}
+				}
+				break;
+
+			case SCREEN_CONF_LOCOLIST_IDLE:
+				// Switchy goodness
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					if (locoSlotOption > 0)
+						locoSlotOption--;
+					screenState = SCREEN_CONF_LOCOLIST_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					if (locoSlotOption < NUM_CONF_OPTIONS-1)
+						locoSlotOption++;
+					screenState = SCREEN_CONF_LOCOLIST_DRAW;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed && (configurationOptions[configMenuOption].configScreen))
+				{
+					screenState = SCREEN_CONF_LOCOSLOT1_SETUP;
+				}
+				
+				// Buttons handled, clear
+				buttonsPressed = 0;
+				break;
+
+			case SCREEN_CONF_LOCOSLOT1_SETUP:
+				lcd_clrscr();
+				loadLocoConfiguration(locoSlotOption, &tmpLocoConfig);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d  ADDR  MAX  RAMP", locoSlotOption);
+				lcd_puts(screenLineBuffer);
+				configSaveU8 = 4;
+				lcd_gotoxy(configSaveU8, 2);
+				lcd_putc('^');
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
+				screenState = SCREEN_CONF_LOCOSLOT1_DRAW;
+				break;
+
+
+//  Loco Configuration Screen 1
+//  00000000001111111111
+//  01234567890123456789
+// [nn  ADDR  MAX  RAMP ]
+// [    xxxx  nnn% yy.ys]
+// [    ^               ]
+// [ +++  >>> NEXT CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+			case SCREEN_CONF_LOCOSLOT1_DRAW:
+				lcd_gotoxy(4, 1);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
+					tmpLocoConfig.shortDCCAddress?"%02d A:s%03d %03d %02d.%01d":"%02d A:%04d %03d %02d.%01d", 
+					locoSlotOption, tmpLocoConfig.address, tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+				blankCursorLine();
+				lcd_gotoxy(configSaveU8, 1);
+				lcd_putc('^');
+				break;
+
+			case SCREEN_CONF_LOCOSLOT1_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					switch(configSaveU8)
+					{
+						case 4:
+							// 1000x addr - 0-9 & s
+							if (tmpLocoConfig.shortDCCAddress)
+							{
+								tmpLocoConfig.shortDCCAddress = false;
+							} else {
+								tmpLocoConfig.address += 1000;
+								if (tmpLocoConfig.address >= 10000)
+								{
+									tmpLocoConfig.shortDCCAddress = true;
+									tmpLocoConfig.address = min(tmpLocoConfig.address, 127);
+								}
+							}
+							break;
+						case 5:
+							// 100x addr - short?0-1:0-9
+							if ((tmpLocoConfig.address % 1000) < 900)
+								tmpLocoConfig.address += 100;
+							else
+								tmpLocoConfig.address -= 900;
+
+							if (tmpLocoConfig.shortDCCAddress)
+								tmpLocoConfig.address = min(tmpLocoConfig.address, 127);
+							break;
+
+						case 6:
+							// 10x addr - 0-9
+							if ((tmpLocoConfig.address % 100) < 90)
+								tmpLocoConfig.address += 10;
+							else
+								tmpLocoConfig.address -= 90;
+							if (tmpLocoConfig.shortDCCAddress)
+								tmpLocoConfig.address = min(tmpLocoConfig.address, 127);
+							break;
+
+						case 7:
+							// 1x addr 
+							if ((tmpLocoConfig.address % 10) < 9)
+								tmpLocoConfig.address += 1;
+							else
+								tmpLocoConfig.address -= 9;
+							if (tmpLocoConfig.shortDCCAddress)
+								tmpLocoConfig.address = min(tmpLocoConfig.address, 127);
+							break;
+
+						case 10:
+							// 100x speed - range 0-100
+							if (tmpLocoConfig.maxSpeed < 100)
+								tmpLocoConfig.maxSpeed += 100;
+							else
+								tmpLocoConfig.maxSpeed -= 100;
+							tmpLocoConfig.maxSpeed = min(tmpLocoConfig.maxSpeed, 100);
+							break;
+
+						case 11:
+							// 10x addr - 0-9
+							if ((tmpLocoConfig.maxSpeed % 100) < 90)
+								tmpLocoConfig.maxSpeed += 10;
+							else
+								tmpLocoConfig.maxSpeed -= 90;
+							tmpLocoConfig.maxSpeed = min(tmpLocoConfig.maxSpeed, 100);
+							break;
+
+						case 12:
+							// 1x addr 
+							if ((tmpLocoConfig.maxSpeed % 10) < 9)
+								tmpLocoConfig.maxSpeed += 1;
+							else
+								tmpLocoConfig.maxSpeed -= 9;
+							tmpLocoConfig.maxSpeed = min(tmpLocoConfig.maxSpeed, 100);
+							break;
+
+						case 15:
+							tmpLocoConfig.rampRate += 100;
+							break;
+						case 16:
+							// 1x addr 
+							if ((tmpLocoConfig.rampRate % 100) < 90)
+								tmpLocoConfig.rampRate += 10;
+							else
+								tmpLocoConfig.rampRate -= 90;
+							break;
+						case 18:
+							// 1x addr 
+							if ((tmpLocoConfig.rampRate % 10) < 9)
+								tmpLocoConfig.rampRate += 1;
+							else
+								tmpLocoConfig.rampRate -= 9;
+							break;
+
+					}
+					screenState = SCREEN_CONF_LOCOSLOT1_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					switch(configSaveU8)
+					{
+						case 4:
+						case 5:
+						case 6:
+						case 10:
+						case 11:
+						case 15:
+							configSaveU8++;
+							break;
+
+						case 7:
+							configSaveU8 = 10; // Jump to first digit of max speed
+							break;
+
+						case 12:
+							configSaveU8 = 15; // Jump to first digit of ramp
+							break;
+
+
+						case 16:
+							configSaveU8 = 18; // Jump to decimal of ramp
+							break;
+
+						case 18:
+							configSaveU8 = 4; // Jump to first digit of address
+							break;
+
+						default:
+							//WTF?
+							configSaveU8 = 4;
+							break;
+					}
+					screenState = SCREEN_CONF_LOCOSLOT1_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					// Next or save based on if it's the DC screen
+					if (0 == locoSlotOption)
+					{
+						// DC mode, we're saving
+						
+					} else {
+						// DCC mode, on to the function screen
+						screenState = SCREEN_CONF_LOCOSLOT2_SETUP;
+					}
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Cancel
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+
+				// Buttons handled, clear
+				buttonsPressed = 0;
+
+				break;
+
+//  Loco Configuration Screen 2
+//  00000000001111111111
+//  01234567890123456789
+// [nn   FWD FWD REV REV]
+// [ Fnn Fnn Fnn Fnn Fnn]
+// [     ^              ]
+// [ +++  >>> SAVE CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+			case SCREEN_CONF_LOCOSLOT2_SETUP:
+				lcd_clrscr();
+				loadLocoConfiguration(locoSlotOption, &tmpLocoConfig);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d  ADDR  MAX  RAMP", locoSlotOption);
+				lcd_puts(screenLineBuffer);
+				configSaveU8 = 4;
+				lcd_gotoxy(configSaveU8, 2);
+				lcd_putc('^');
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
+				break;
+
 
 			case SCREEN_CONF_MENU_DRAW:
 				lcd_clrscr();
