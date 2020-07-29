@@ -172,6 +172,9 @@ typedef enum
 	SCREEN_CONF_LOCOSLOT2_DRAW  = 116,
 	SCREEN_CONF_LOCOSLOT2_IDLE  = 117,
 
+	SCREEN_CONF_RESET_SETUP = 245,
+	SCREEN_CONF_RESET_DRAW  = 246,
+	SCREEN_CONF_RESET_IDLE  = 247,
 
 	SCREEN_CONF_DIAG_SETUP = 250,
 	SCREEN_CONF_DIAG_DRAW  = 251,
@@ -192,6 +195,7 @@ const ConfigurationOption configurationOptions[] =
 {
   { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
   { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
+  { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
 };
 
@@ -1283,6 +1287,71 @@ int main(void)
 						}
 						saveOpsConfiguration(&opsConfig);
 					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
+			case SCREEN_CONF_RESET_SETUP:
+				lcd_clrscr();
+				configSaveU8 = 5;
+				screenState = SCREEN_CONF_RESET_DRAW;
+				break;
+
+
+//  Factory Reset Screen
+//  00000000001111111111
+//  01234567890123456789
+// [CLEAR ALL SETTINGS? ]
+// [ Press YES n more   ]
+// [ times to confirm   ]
+// [ YES! YES!     CNCL ]
+			case SCREEN_CONF_RESET_DRAW:
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("CLEAR ALL SETTINGS?"));
+
+				if (configSaveU8 > 0)
+				{
+					lcd_gotoxy(1,1);
+					lcd_puts_p(PSTR("Press YES n more"));
+					lcd_gotoxy(1,2);
+					lcd_puts_p(PSTR("times to confirm"));
+					lcd_gotoxy(11,1);
+					lcd_putc(configSaveU8 + '0');
+					drawSoftKeys_p(PSTR("YES!"), PSTR(""), PSTR(""), PSTR("CNCL"));
+				} else { 
+					lcd_gotoxy(0,1);
+					lcd_puts_p(PSTR("    REALLY ERASE    "));
+					lcd_gotoxy(0,2);
+					lcd_puts_p(PSTR("    EVERYTHING?     "));
+					drawSoftKeys_p(PSTR(""), PSTR("YES!"), PSTR(""), PSTR("CNCL"));
+				}
+				screenState = SCREEN_CONF_RESET_IDLE;
+				break;
+
+			case SCREEN_CONF_RESET_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					if (configSaveU8 > 0)
+						configSaveU8--;
+					screenState = SCREEN_CONF_RESET_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					if (configSaveU8 == 0)
+					{
+						lcd_gotoxy(0,0);
+						lcd_puts_p(PSTR("RESETTING..."));
+						firstTimeInitConfig();
+						lcd_gotoxy(0,1);
+						lcd_puts_p(PSTR("EEPROM... done"));
+						while(1); // Just stall and wait for a WDT reset
+					}
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
 					lcd_clrscr();
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
