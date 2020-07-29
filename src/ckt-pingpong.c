@@ -261,18 +261,113 @@ typedef struct
 
 volatile DCCPacket nextDCCPacket;  // This is the next packet the DCC ISR will send when ready
 
+
+
+uint16_t dcc_currentAddr;
+uint8_t dcc_currentSpeed;
+uint32_t dcc_currentFuncs;
+bool dcc_shortAddr;
+
+uint8_t dcc_setSpeedAndDir(uint16_t addr, bool isShortAddr, uint8_t speed, uint8_t direction, uint32_t functions)
+{
+	//001CCCCC  0  DDDDDDDD
+	//CCCCC = 11111 - speed
+	//U0000000 - U=1 forward, 0=rev
+	//U0000001 - emergency stopped
+	//11 000000-11 100111
+	//Addr byte 2
+	speed = min(speed, 126);
+
+	if (speed == 0)
+		dcc_currentSpeed = 0;
+	else if (speed >= 1 && speed < 127)
+		dcc_currentSpeed = speed + 1;
+
+	// In DCC, a high bit on the speed is forward
+	dcc_currentSpeed |= (direction?0x00:0x80);
+
+	if (isShortAddr)
+	{
+		dcc_currentAddr = max(1, min(addr, 127));
+		dcc_shortAddr = true;
+	} else {
+		dcc_currentAddr = max(1, min(addr, 9999));
+		dcc_shortAddr = false;
+	}
+	dcc_currentFuncs = functions;
+	dcc_shortAddr = isShortAddr;
+	
+	return 0;
+}
+
 void dcc_scheduler()
 {
+	static uint8_t dccStator = 0;
+	uint8_t i = 0;
+	uint8_t len = 0;
+
 	// If there's no space in the "next" buffer yet, just get out
 	if (nextDCCPacket.len != 0)
 		return;
 
-	// Go through function commands first
-	
-	// Send any speeds that changed
-	
-	// Finally refresh speeds that haven't changed
+	if (dcc_shortAddr)
+	{
+		nextDCCPacket.data[len++] = (0x7F & dcc_currentAddr);
+	} else {
+		nextDCCPacket.data[len++] = 0b11000000 | (0x3F & (dcc_currentAddr>>8));
+		nextDCCPacket.data[len++] = dcc_currentAddr & 0xFF;
+	}
 
+	switch(dccStator++)
+	{
+		case 0: // Send speed/dir
+			nextDCCPacket.data[len++] = 0b00111111; // Advanced operations instruction, 128 speed step
+			nextDCCPacket.data[len++] = dcc_currentSpeed;
+			break;
+
+		case 1:
+		case 3:
+		case 5:
+		case 7:
+		case 9:
+		case 11:
+			nextDCCPacket.data[0] = 0xFF;
+			nextDCCPacket.data[1] = 0x00;
+			nextDCCPacket.len = 2;
+			break;
+		
+		case 2:
+			i = ((dcc_currentFuncs & 0x1E)>>1) | ((dcc_currentFuncs & 0x01)?0x10:0x00);
+			nextDCCPacket.data[len++] = 0b10000000 | (0x1F & i); // Function group 1 (F0-F4)
+			break;
+			
+		case 4:
+			nextDCCPacket.data[len++] = 0b10100000 | (0x0F & (dcc_currentFuncs>>5)); // Function group 2 (F5-F8)
+			break;
+
+		case 6:
+			nextDCCPacket.data[len++] = 0b10110000 | (0x0F & (dcc_currentFuncs>>9)); // Function group 2 (F5-F8)
+			break;
+
+		case 8:
+			nextDCCPacket.data[len++] = 0b11011110;
+			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>13); // Function group 2 (F5-F8)
+			break;
+
+		case 10:
+			nextDCCPacket.data[len++] = 0b11011111;
+			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>20); // Function group 2 (F5-F8)
+			break;
+
+		
+		default:
+			dccStator = 0;
+			len = 0;
+			break;
+	}
+
+	if (len)
+		nextDCCPacket.len = len; // Once we set len, need to not touch the buffer until the ISR clears it
 }
 
 
@@ -316,7 +411,7 @@ ISR(TIMER1_COMPA_vect)
 					// Calculate checksum
 					currentPacket.data[currentPacket.len] = currentPacket.data[0];
 					for (uint8_t i=1; i<currentPacket.len; i++)
-						currentPacket.data[currentPacket.len] ^= currentPacket.data[1];
+						currentPacket.data[currentPacket.len] ^= currentPacket.data[i];
 					currentPacket.len++;
 				}
 
@@ -674,15 +769,15 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 		opsConfig->activeLocoConfig = 1; // FIXME!  Load this!
 	
 	opsConfig->speed = 0;
-	opsConfig->requestedSpeed = 10000;
+	opsConfig->requestedSpeed = 2000;
 }
 
 void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
 {
-	locoConfig->address = 3;
-	locoConfig->shortDCCAddress = true;
+	locoConfig->address = 600;
+	locoConfig->shortDCCAddress = false;
 	
-	locoConfig->maxSpeed = 10000;
+	locoConfig->maxSpeed = 2000;
 	locoConfig->rampRate = 20; // 20 seconds
 
 	locoConfig->fwdFunctions = 1; // F0
@@ -703,7 +798,7 @@ typedef enum
 	STATE_REVERSE,
 	STATE_FORWARD,
 	STATE_REVDECEL,
-	STATE_FWDDECEL
+	STATE_FWDDECEL,
 } OpState;
 
 
@@ -723,7 +818,7 @@ int main(void)
 	LocoConfig currentLoco;
 	OpsConfiguration opsConfig;
 	
-	uint8_t ftorDelay = 0, rtofDelay = 0;
+	uint8_t endStopDelay = 0;
 	
 	DebounceState d;
 	uint8_t fwdSensorMask = 0, revSensorMask = 0;
@@ -741,6 +836,9 @@ int main(void)
 	drawSplashScreen();
 	wdt_reset();
 	loopCount = 0;
+
+	opState = STATE_LEARN;
+	opsConfig.requestedSpeed = currentLoco.maxSpeed;
 
 	while (1)
 	{
@@ -776,8 +874,6 @@ int main(void)
 			case STATE_LEARN:
 				fwdSensorMask = 0;
 				revSensorMask = 0;
-
-				opsConfig.requestedSpeed = currentLoco.maxSpeed;
 				if (opsConfig.speed > 0)
 				{
 					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
@@ -805,19 +901,18 @@ int main(void)
 				break;
 				
 			case STATE_FTOR_WAIT:
-				opsConfig.requestedSpeed = -1;
-				if (0 == ftorDelay)    
+				opsConfig.requestedSpeed = 0;
+				if (0 == endStopDelay)    
 					opState = STATE_REVERSE;
 				break;
 			
 			case STATE_RTOF_WAIT:
-				opsConfig.requestedSpeed = 1;
-				if (0 == ftorDelay)    
+				opsConfig.requestedSpeed = 0;
+				if (0 == endStopDelay)    
 					opState = STATE_FORWARD;
 				break;
 			
 			case STATE_FORWARD:
-
 				if (trackStatus & fwdSensorMask)
 				{
 					opsConfig.requestedSpeed = 0;
@@ -841,7 +936,7 @@ int main(void)
 				opsConfig.requestedSpeed = 0;
 				if (0 == opsConfig.speed)
 				{
-					rtofDelay = 10;
+					endStopDelay = 10;
 					opState = STATE_RTOF_WAIT;
 				}
 				break;
@@ -850,7 +945,7 @@ int main(void)
 				opsConfig.requestedSpeed = 0;
 				if (0 == opsConfig.speed)
 				{
-					ftorDelay = 10;
+					endStopDelay = 10;
 					opState = STATE_FTOR_WAIT;
 				}
 				break;
@@ -866,10 +961,8 @@ int main(void)
 		{
 			eventFlags &= ~(EVENT_TIME_ADJUST_SPEED);
 			
-			if (ftorDelay > 0)
-				ftorDelay--;
-			if (rtofDelay > 0)
-				rtofDelay--;
+			if (endStopDelay > 0)
+				endStopDelay--;
 			
 			// Time to re-evaluate speed
 			if (opsConfig.stopped)  // If a stop is requested, immediately set speed to 0
@@ -892,7 +985,12 @@ int main(void)
 			// Set speed / direction
 			if (opsConfig.dcMode)
 				dc_setSpeedAndDir(abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1);
-//			else  FIXME: DCC set speed/dir/functions
+			else
+			{
+				dcc_setSpeedAndDir(currentLoco.address, currentLoco.shortDCCAddress, 
+					abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1,
+					currentLoco.allFunctions | ((opsConfig.speed >= 0)?currentLoco.revFunctions:currentLoco.fwdFunctions));
+			}
 		}
 
 
@@ -925,7 +1023,7 @@ int main(void)
 		}
 		
 		
-		
+		dcc_scheduler();
 		
 		
 		switch(screenState)
@@ -1018,6 +1116,7 @@ int main(void)
 				else if (SOFTKEY_2 & buttonsPressed)
 				{
 					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+					opState = STATE_LEARN;
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
@@ -1025,6 +1124,7 @@ int main(void)
 					if (opsConfig.stopped)
 					{
 						opsConfig.speed = 0;
+						opState = STATE_LEARN; // Put it back in learning mode
 					}
 					
 					screenState = SCREEN_MAIN_REFRESH;
