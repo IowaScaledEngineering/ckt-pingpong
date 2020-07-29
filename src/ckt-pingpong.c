@@ -39,6 +39,7 @@ LICENSE:
 #include "lcd.h"
 #include "dc.h"
 #include "dcc.h"
+#include "userconfig.h"
 
 // ******** Start 100 Hz Timer - Very Accurate Version
 
@@ -189,14 +190,12 @@ typedef struct
 
 const ConfigurationOption configurationOptions[] = 
 {
-  { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
   { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
+  { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
 };
 
 #define NUM_CONF_OPTIONS  (sizeof(configurationOptions)/sizeof(ConfigurationOption))
-
-#define NUM_LOCO_OPTIONS 15
 
 void initialize100HzTimer(void)
 {
@@ -399,67 +398,6 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 #define TRACK_STATUS_FAULTED         0x20
 #define TRACK_STATUS_STOPPED         0x01
 
-typedef struct
-{
-	uint16_t address;
-	bool shortDCCAddress;
-	uint8_t maxSpeed;
-	uint8_t rampRate;
-	uint32_t fwdFunctions;
-	uint32_t revFunctions;
-	uint32_t allFunctions;
-} LocoConfig;
-
-
-#define DIRECTION_FORWARD 0
-#define DIRECTION_REVERSE 1
-
-typedef struct
-{
-	// Loaded from EEP
-	bool dcMode;
-	uint8_t activeLocoConfig;
-	bool stopped;
-	
-	// Runtime elements
-	int16_t speed;
-	int16_t requestedSpeed;
-	uint8_t direction;
-} OpsConfiguration;
-
-void loadOpsConfiguration(OpsConfiguration* opsConfig)
-{
-	opsConfig->dcMode = false;
-	opsConfig->stopped = false;
-	
-	if(opsConfig->dcMode)
-		opsConfig->activeLocoConfig = 0;
-	else
-		opsConfig->activeLocoConfig = 1; // FIXME!  Load this!
-	
-	opsConfig->speed = 0;
-	opsConfig->requestedSpeed = 2000;
-}
-
-void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
-{
-	locoConfig->address = 600;
-	locoConfig->shortDCCAddress = false;
-	
-	locoConfig->maxSpeed = 20;
-	locoConfig->rampRate = 20; // 20 seconds
-
-	locoConfig->fwdFunctions = 1; // F0
-	locoConfig->revFunctions = 1; // F0
-	locoConfig->allFunctions = 0; // Fnone
-}
-
-
-bool saveLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
-{
-	// Should probably do something here.
-	return true;
-}
 
 
 #define ANALOG_CHANNEL_PHASE_A_VOLTS  0
@@ -477,9 +415,6 @@ typedef enum
 	STATE_REVDECEL,
 	STATE_FWDDECEL,
 } OpState;
-
-
-
 
 int main(void)
 {
@@ -530,6 +465,8 @@ int main(void)
 		bool updateData = false;
 		loopCount++;
 		wdt_reset();
+		
+		// STEP 1 - Check Event Flags from 100Hz ISR and see if it's time to scan the inputs (every 20mS)
 
 		if (eventFlags & EVENT_TIME_READ_INPUTS)
 		{
@@ -553,6 +490,10 @@ int main(void)
 			else
 				trackStatus |= TRACK_STATUS_SENSOR_RIGHT;
 		}
+
+		// STEP 2 - Run Ping-Pong State Machine
+		//  Now that we have the sensor inputs read and debounced, run the state machine to
+		//  see if we need to change states of motion
 
 		switch(opState)
 		{
@@ -640,7 +581,8 @@ int main(void)
 				break;
 		}
 
-		// Now that we've set the requested speed, implement it periodically using the ramp rate
+		// STEP 3 - If it's time to adjust speed (every 100mS), send a new speed to the output
+		//  mechanism (DC or DCC)
 
 		if (eventFlags & EVENT_TIME_ADJUST_SPEED)
 		{
@@ -678,7 +620,11 @@ int main(void)
 			}
 		}
 
+		// Whether or not we've changed speed, we need to call the DCC scheduler so that it can fill the packet buffer
+		//  if it's empty
+		dcc_scheduler();
 
+		// STEP 4 - Read the ADCs
 		if ((eventFlags & EVENT_TIME_READ_ADCS) && (eventFlags & EVENT_ANALOG_READ_COMPLETE))
 		{
 			// Analog readings are done - go get and process the values
@@ -707,10 +653,9 @@ int main(void)
 			updateData = true;
 		}
 		
+
 		
-		dcc_scheduler();
-		
-		
+		// STEP 5 - Deal with the gigantic UI management state machine
 		switch(screenState)
 		{
 			case SCREEN_MAIN_DRAW:
@@ -885,18 +830,6 @@ int main(void)
 				buttonsPressed = 0;
 				break;
 
-			case SCREEN_CONF_LOCOSLOT1_SETUP:
-				lcd_clrscr();
-				loadLocoConfiguration(locoSlotOption, &tmpLocoConfig);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d  ADDR  MAX  RAMP", locoSlotOption);
-				lcd_puts(screenLineBuffer);
-				configSaveU8 = 4;
-				lcd_gotoxy(configSaveU8, 2);
-				lcd_putc('^');
-				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
-				screenState = SCREEN_CONF_LOCOSLOT1_DRAW;
-				break;
-
 
 //  Loco Configuration Screen 1
 //  00000000001111111111
@@ -909,6 +842,18 @@ int main(void)
 // xxxx = address (or *DC* for DC)
 // nnn = max speed %
 // yy.y = ramp time
+
+			case SCREEN_CONF_LOCOSLOT1_SETUP:
+				lcd_clrscr();
+				loadLocoConfiguration(locoSlotOption, &tmpLocoConfig);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d  ADDR  MAX  RAMP", locoSlotOption);
+				lcd_puts(screenLineBuffer);
+				configSaveU8 = 4;
+				lcd_gotoxy(configSaveU8, 2);
+				lcd_putc('^');
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
+				screenState = SCREEN_CONF_LOCOSLOT1_DRAW;
+				break;
 
 			case SCREEN_CONF_LOCOSLOT1_DRAW:
 				lcd_gotoxy(4, 1);
@@ -1336,7 +1281,7 @@ int main(void)
 						} else {
 							dcc_init();
 						}
-//						storeConfiguration(status);
+						saveOpsConfiguration(&opsConfig);
 					}
 					lcd_clrscr();
 					screenState = SCREEN_CONF_MENU_DRAW;
