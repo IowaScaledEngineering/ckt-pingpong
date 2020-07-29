@@ -695,6 +695,17 @@ void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
 #define ANALOG_CHANNEL_INPUT_VOLTS    2
 #define ANALOG_CHANNEL_TRACK_CURRENT  3
 
+typedef enum
+{
+	STATE_LEARN = 0,
+	STATE_FTOR_WAIT,
+	STATE_RTOF_WAIT,
+	STATE_REVERSE,
+	STATE_FORWARD,
+	STATE_REVDECEL,
+	STATE_FWDDECEL
+} OpState;
+
 
 int main(void)
 {
@@ -707,12 +718,15 @@ int main(void)
 	char screenLineBuffer[21];
 
 	uint8_t configSaveU8 = 0;
-
+	OpState opState = STATE_LEARN;
 	ScreenState screenState = SCREEN_MAIN_DRAW;
 	LocoConfig currentLoco;
 	OpsConfiguration opsConfig;
-	DebounceState d;
 	
+	uint8_t ftorDelay = 0, rtofDelay = 0;
+	
+	DebounceState d;
+	uint8_t fwdSensorMask = 0, revSensorMask = 0;
 	// Application initialization
 	init();
 	initDebounceState(&d, 0xFF); // Initialize all high since all inputs are active low
@@ -757,9 +771,105 @@ int main(void)
 				trackStatus |= TRACK_STATUS_SENSOR_RIGHT;
 		}
 
+		switch(opState)
+		{
+			case STATE_LEARN:
+				fwdSensorMask = 0;
+				revSensorMask = 0;
+
+				opsConfig.requestedSpeed = currentLoco.maxSpeed;
+				if (opsConfig.speed > 0)
+				{
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					{
+						fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+						revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+						opState = STATE_FWDDECEL;
+					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
+						fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+						opState = STATE_FWDDECEL;
+					}
+				} else if (opsConfig.speed < 0) {
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					{
+						fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+						opState = STATE_REVDECEL;
+					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
+						fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+						revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+						opState = STATE_REVDECEL;
+					}
+				}
+				break;
+				
+			case STATE_FTOR_WAIT:
+				opsConfig.requestedSpeed = -1;
+				if (0 == ftorDelay)    
+					opState = STATE_REVERSE;
+				break;
+			
+			case STATE_RTOF_WAIT:
+				opsConfig.requestedSpeed = 1;
+				if (0 == ftorDelay)    
+					opState = STATE_FORWARD;
+				break;
+			
+			case STATE_FORWARD:
+
+				if (trackStatus & fwdSensorMask)
+				{
+					opsConfig.requestedSpeed = 0;
+					opState = STATE_FWDDECEL;
+				} else {
+					opsConfig.requestedSpeed = currentLoco.maxSpeed;
+				}
+				break;
+
+			case STATE_REVERSE:
+				if (trackStatus & revSensorMask)
+				{
+					opsConfig.requestedSpeed = 0;
+					opState = STATE_REVDECEL;
+				} else {
+					opsConfig.requestedSpeed = -currentLoco.maxSpeed;
+				}
+				break;
+
+			case STATE_REVDECEL:
+				opsConfig.requestedSpeed = 0;
+				if (0 == opsConfig.speed)
+				{
+					rtofDelay = 10;
+					opState = STATE_RTOF_WAIT;
+				}
+				break;
+
+			case STATE_FWDDECEL:
+				opsConfig.requestedSpeed = 0;
+				if (0 == opsConfig.speed)
+				{
+					ftorDelay = 10;
+					opState = STATE_FTOR_WAIT;
+				}
+				break;
+				
+			default:
+				opState = STATE_LEARN;
+				break;
+		}
+
+		// Now that we've set the requested speed, implement it periodically using the ramp rate
+
 		if (eventFlags & EVENT_TIME_ADJUST_SPEED)
 		{
 			eventFlags &= ~(EVENT_TIME_ADJUST_SPEED);
+			
+			if (ftorDelay > 0)
+				ftorDelay--;
+			if (rtofDelay > 0)
+				rtofDelay--;
 			
 			// Time to re-evaluate speed
 			if (opsConfig.stopped)  // If a stop is requested, immediately set speed to 0
@@ -815,6 +925,9 @@ int main(void)
 		}
 		
 		
+		
+		
+		
 		switch(screenState)
 		{
 			case SCREEN_MAIN_DRAW:
@@ -847,7 +960,8 @@ int main(void)
 				lcd_gotoxy(0, 2);
 				lcd_puts_p(PSTR("RMP:"));
 				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d.%01ds", currentLoco.rampRate/10, currentLoco.rampRate%10);
-
+				lcd_puts(screenLineBuffer);
+				
 				// Display sensor input status
 				lcd_gotoxy(10, 2);
 				lcd_puts_p(PSTR("SENSOR:"));
@@ -876,6 +990,9 @@ int main(void)
 				}
 				else
 					lcd_puts_p(PSTR("STOP"));
+					
+				lcd_gotoxy(19,1);
+				lcd_putc(opState + '0');
 				
 				lcd_gotoxy(17,2);
 				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_LEFT)?'*':'-');
