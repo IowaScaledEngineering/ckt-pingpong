@@ -49,6 +49,7 @@ typedef struct
 
 void dcc_init();
 void dcc_stop();
+void dcc_reinit();
 extern volatile DCCPacket nextDCCPacket;  // This is the next packet the DCC ISR will send when ready
 uint8_t dcc_setSpeedAndDir(uint16_t addr, bool isShortAddr, uint8_t speed, uint8_t direction, uint32_t functions);
 void dcc_scheduler();

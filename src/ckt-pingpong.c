@@ -172,6 +172,11 @@ typedef enum
 	SCREEN_CONF_LOCOSLOT2_DRAW  = 116,
 	SCREEN_CONF_LOCOSLOT2_IDLE  = 117,
 
+	SCREEN_LOAD_CONF_SETUP = 120,
+	SCREEN_LOAD_CONF_DRAW = 121,
+	SCREEN_LOAD_CONF_IDLE = 122,
+	
+
 	SCREEN_CONF_RESET_SETUP = 245,
 	SCREEN_CONF_RESET_DRAW  = 246,
 	SCREEN_CONF_RESET_IDLE  = 247,
@@ -249,10 +254,15 @@ void lcd_backlightOff()
 #define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
 #define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
 
-#define SOFTKEY_1 0x01
-#define SOFTKEY_2 0x02
-#define SOFTKEY_3 0x04
-#define SOFTKEY_4 0x08
+#define SOFTKEY_1      0x01
+#define SOFTKEY_2      0x02
+#define SOFTKEY_3      0x04
+#define SOFTKEY_4      0x08
+#define SOFTKEY_1_LONG 0x10
+#define SOFTKEY_2_LONG 0x20
+#define SOFTKEY_3_LONG 0x40
+#define SOFTKEY_4_LONG 0x80
+
 #define FAULT_IN  0x20
 #define SENSOR_LEFT  0x40
 #define SENSOR_RIGHT 0x80
@@ -438,12 +448,13 @@ int main(void)
 	OpsConfiguration opsConfig;
 	
 	uint8_t endStopDelay = 0;
-	
+	uint8_t buttonLongPressCounters[4] = {3,3,3,3};
 	DebounceState d;
 	uint8_t fwdSensorMask = 0, revSensorMask = 0;
 
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
+
 
 
 	// Application initialization
@@ -476,7 +487,29 @@ int main(void)
 		{
 			eventFlags &= ~(EVENT_TIME_READ_INPUTS);
 			
-			buttonsPressed = debounce(readSwitches(), &d);
+			buttonsPressed = 0x0F & (debounce(readSwitches(), &d));
+			
+			for(uint8_t btn=0; btn<4; btn++)
+			{
+				if (buttonsPressed & (1<<btn))
+					buttonLongPressCounters[btn] = 25; // On initial press, we set a 0.5s delay before rapid
+
+				if (d.debounced_state & (1<<btn))
+					buttonLongPressCounters[btn] = 25; // Long delay if the button is up, too
+				else
+				{
+					// Button is down
+					if (buttonLongPressCounters[btn])
+						buttonLongPressCounters[btn]--;
+					else
+					{
+						buttonsPressed |= (1<<(btn+4));
+						buttonLongPressCounters[btn] = 5; // Repeat time
+					}
+				}
+			}
+
+
 
 			if (d.debounced_state & FAULT_IN)
 				trackStatus &= ~TRACK_STATUS_FAULTED;
@@ -746,6 +779,7 @@ int main(void)
 				{
 					// The "Load" key only works in DCC mode
 					// Do stuff here to change to load configuration screen
+					screenState = SCREEN_LOAD_CONF_SETUP;
 				}
 				else if (SOFTKEY_2 & buttonsPressed)
 				{
@@ -772,13 +806,90 @@ int main(void)
 
 				buttonsPressed = 0;
 				break;
+				
+			case SCREEN_LOAD_CONF_SETUP:
+				if (opsConfig.dcMode)
+				{
+					screenState = SCREEN_MAIN_DRAW;
+					break;
+				}
+				locoSlotOption = 0;
+				screenState = SCREEN_LOAD_CONF_DRAW;
+				break;
+
+			case SCREEN_LOAD_CONF_DRAW:
+				lcd_clrscr();
+				drawSoftKeys_p((locoSlotOption>0)?PSTR(" UP "):PSTR(""),  (locoSlotOption < NUM_LOCO_OPTIONS-1)?PSTR("DOWN"):PSTR(""), PSTR("SLCT"), PSTR("CNCL"));
+				{
+					uint8_t i, baseOptionCount = (locoSlotOption / 3) * 3;
+					for(i=0; i<3; i++)
+					{
+						if (i+baseOptionCount >= NUM_LOCO_OPTIONS-1)
+							continue;
+						if (i+baseOptionCount == locoSlotOption)
+						{
+							lcd_gotoxy(0, i);
+							lcd_putc('>');
+						}
+
+						loadLocoConfiguration(i+baseOptionCount+1, &tmpLocoConfig);
+						lcd_gotoxy(1, i);
+						
+						char currentConfigIndicator = (i+baseOptionCount+1 == opsConfig.activeLocoConfig)?'*':' ';
+						
+						// Get locomotive configuration details
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
+							tmpLocoConfig.shortDCCAddress?"%02d%cA:s%03d %03d %02d.%01d":"%02d%cA:%04d %03d %02d.%01d",
+							i+baseOptionCount+1, currentConfigIndicator, tmpLocoConfig.address, tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+						lcd_puts(screenLineBuffer);
+					}
+				}
+				screenState = SCREEN_LOAD_CONF_IDLE;
+				break;
+
+			case SCREEN_LOAD_CONF_IDLE:
+				// Switchy goodness
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
+				{
+					if (locoSlotOption > 0)
+						locoSlotOption--;
+					screenState = SCREEN_LOAD_CONF_DRAW;
+				}
+				else if ((SOFTKEY_2 | SOFTKEY_2_LONG) & buttonsPressed)
+				{
+					if (locoSlotOption < NUM_LOCO_OPTIONS-1)
+						locoSlotOption++;
+					screenState = SCREEN_LOAD_CONF_DRAW;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					screenState = SCREEN_MAIN_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed && (configurationOptions[configMenuOption].configScreen))
+				{
+					// Stop old locomotive in DCC mode
+					if (!opsConfig.dcMode)
+						dcc_reinit();
+					opsConfig.activeLocoConfig = locoSlotOption+1;
+					saveOpsConfiguration(&opsConfig);
+					loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
+					opState = STATE_LEARN; // New locomotive, no guarantee it moves the same direction
+					screenState = SCREEN_MAIN_DRAW;
+				}
+				
+				// Buttons handled, clear
+				buttonsPressed = 0;
+				break;
+
 
 			case SCREEN_CONF_LOCOLIST_SETUP:
 				locoSlotOption = 0;
+				screenState = SCREEN_CONF_LOCOLIST_DRAW;
 				break;
+				
 			case SCREEN_CONF_LOCOLIST_DRAW:
 				lcd_clrscr();
-				drawSoftKeys_p((locoSlotOption>0)?PSTR(" UP "):PSTR(""),  (locoSlotOption < NUM_CONF_OPTIONS-1)?PSTR("DOWN"):PSTR(""), PSTR("SLCT"), PSTR("BACK"));
+				drawSoftKeys_p((locoSlotOption>0)?PSTR(" UP "):PSTR(""),  (locoSlotOption < NUM_LOCO_OPTIONS-1)?PSTR("DOWN"):PSTR(""), PSTR("SLCT"), PSTR("BACK"));
 				{
 					uint8_t i, baseOptionCount = (locoSlotOption / 3) * 3;
 					for(i=0; i<3; i++)
@@ -805,6 +916,7 @@ int main(void)
 						lcd_puts(screenLineBuffer);
 					}
 				}
+				screenState = SCREEN_CONF_LOCOLIST_IDLE;
 				break;
 
 			case SCREEN_CONF_LOCOLIST_IDLE:
@@ -817,7 +929,7 @@ int main(void)
 				}
 				else if (SOFTKEY_2 & buttonsPressed)
 				{
-					if (locoSlotOption < NUM_CONF_OPTIONS-1)
+					if (locoSlotOption < NUM_LOCO_OPTIONS-1)
 						locoSlotOption++;
 					screenState = SCREEN_CONF_LOCOLIST_DRAW;
 				}
@@ -852,7 +964,7 @@ int main(void)
 				loadLocoConfiguration(locoSlotOption, &tmpLocoConfig);
 				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d  ADDR  MAX  RAMP", locoSlotOption);
 				lcd_puts(screenLineBuffer);
-				configSaveU8 = 4;
+				configSaveU8 = (0 == locoSlotOption)?10:4;
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
@@ -861,12 +973,22 @@ int main(void)
 
 			case SCREEN_CONF_LOCOSLOT1_DRAW:
 				lcd_gotoxy(4, 1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
-					tmpLocoConfig.shortDCCAddress?"%02d A:s%03d %03d %02d.%01d":"%02d A:%04d %03d %02d.%01d", 
-					locoSlotOption, tmpLocoConfig.address, tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+				if (0 == locoSlotOption)
+				{
+					// DC Slot
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
+						"-DC-  %03d  %02d.%01d", 
+						tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+				} else {
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
+						tmpLocoConfig.shortDCCAddress?"s%03d  %03d  %02d.%01d":"%04d  %03d  %02d.%01d", 
+						tmpLocoConfig.address, tmpLocoConfig.maxSpeed, tmpLocoConfig.rampRate/10, tmpLocoConfig.rampRate%10);
+				}
+				lcd_puts(screenLineBuffer);
 				blankCursorLine();
-				lcd_gotoxy(configSaveU8, 1);
+				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
+				screenState = SCREEN_CONF_LOCOSLOT1_IDLE;
 				break;
 
 			case SCREEN_CONF_LOCOSLOT1_IDLE:
@@ -884,6 +1006,7 @@ int main(void)
 								if (tmpLocoConfig.address >= 10000)
 								{
 									tmpLocoConfig.shortDCCAddress = true;
+									tmpLocoConfig.address %= 1000;
 									tmpLocoConfig.address = min(tmpLocoConfig.address, 127);
 								}
 							}
@@ -947,19 +1070,28 @@ int main(void)
 							break;
 
 						case 15:
-							tmpLocoConfig.rampRate += 100;
+							if (tmpLocoConfig.rampRate > 155)
+								tmpLocoConfig.rampRate = tmpLocoConfig.rampRate % 100;
+							else 
+								tmpLocoConfig.rampRate += 100;
 							break;
 						case 16:
 							// 1x addr 
 							if ((tmpLocoConfig.rampRate % 100) < 90)
-								tmpLocoConfig.rampRate += 10;
+								if (tmpLocoConfig.rampRate > 245)
+									tmpLocoConfig.rampRate -= 10 * ((tmpLocoConfig.rampRate / 10) % 10);
+								else
+									tmpLocoConfig.rampRate += 10;
 							else
 								tmpLocoConfig.rampRate -= 90;
 							break;
 						case 18:
 							// 1x addr 
 							if ((tmpLocoConfig.rampRate % 10) < 9)
-								tmpLocoConfig.rampRate += 1;
+								if (tmpLocoConfig.rampRate == 255)
+									tmpLocoConfig.rampRate -= 5;
+								else
+									tmpLocoConfig.rampRate += 1;
 							else
 								tmpLocoConfig.rampRate -= 9;
 							break;
@@ -994,7 +1126,7 @@ int main(void)
 							break;
 
 						case 18:
-							configSaveU8 = 4; // Jump to first digit of address
+							configSaveU8 = (0 == locoSlotOption)?10:4; // Jump to first digit of address
 							break;
 
 						default:
@@ -1054,7 +1186,7 @@ int main(void)
 
 					for(i=0; i<=28; i++)
 					{
-						if (tmpLocoConfig.allFunctions & (1UL<<i))
+						if (tmpLocoConfig.allFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[0] = i;
 							break;
@@ -1063,40 +1195,45 @@ int main(void)
 
 					for(i=0; i<=28; i++)
 					{
-						if (tmpLocoConfig.fwdFunctions & (1UL<<i))
+						if (tmpLocoConfig.fwdFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[1] = i;
 							break;
 						}
 					}
-					for(; i<=28; i++)
+					for(i++; i<=28; i++)
 					{
-						if (tmpLocoConfig.fwdFunctions & (1UL<<i))
+						if (tmpLocoConfig.fwdFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[2] = i;
 							break;
 						}
 					}
+					
 					for(i=0; i<=28; i++)
 					{
-						if (tmpLocoConfig.revFunctions & (1UL<<i))
+						if (tmpLocoConfig.revFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[3] = i;
 							break;
 						}
 					}
-					for(; i<=28; i++)
+					
+					for(i++; i<=28; i++)
 					{
-						if (tmpLocoConfig.revFunctions & (1UL<<i))
+						if (tmpLocoConfig.revFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[4] = i;
 							break;
 						}
 					}
 				}
+				screenState = SCREEN_CONF_LOCOSLOT2_DRAW;
+				
 				break;
 
 			case SCREEN_CONF_LOCOSLOT2_DRAW:
+				blankCursorLine();
 				for(uint8_t i=0; i<5; i++)
 				{
 					if (configSaveFuncs[i] >= 29)
@@ -1135,7 +1272,7 @@ int main(void)
 							}
 							break;
 
-						case 4:
+						case 3:
 							lcd_gotoxy(13, 1);
 							lcd_puts(screenLineBuffer);
 							if (configSaveU8 == i)
@@ -1145,7 +1282,7 @@ int main(void)
 							}
 							break;
 
-						case 5:
+						case 4:
 							lcd_gotoxy(17, 1);
 							lcd_puts(screenLineBuffer);
 							if (configSaveU8 == i)
@@ -1156,10 +1293,11 @@ int main(void)
 							break;
 					}
 				}
+				screenState = SCREEN_CONF_LOCOSLOT2_IDLE;
 				break;
 
 			case SCREEN_CONF_LOCOSLOT2_IDLE:
-				if (SOFTKEY_1 & buttonsPressed)
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
 				{
 					configSaveFuncs[configSaveU8] = (configSaveFuncs[configSaveU8] + 1) % 30;
 					screenState = SCREEN_CONF_LOCOSLOT2_DRAW;
@@ -1174,9 +1312,9 @@ int main(void)
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
-					tmpLocoConfig.allFunctions = (1UL<<configSaveFuncs[0]);
-					tmpLocoConfig.fwdFunctions = (1UL<<configSaveFuncs[1]) | (1UL<<configSaveFuncs[2]);
-					tmpLocoConfig.revFunctions = (1UL<<configSaveFuncs[3]) | (1UL<<configSaveFuncs[4]);
+					tmpLocoConfig.allFunctions = ((uint32_t)1UL<<configSaveFuncs[0]);
+					tmpLocoConfig.fwdFunctions = ((uint32_t)1UL<<configSaveFuncs[1]) | ((uint32_t)1UL<<configSaveFuncs[2]);
+					tmpLocoConfig.revFunctions = ((uint32_t)1UL<<configSaveFuncs[3]) | ((uint32_t)1UL<<configSaveFuncs[4]);
 					saveLocoConfiguration(locoSlotOption, &tmpLocoConfig);
 					screenState = SCREEN_CONF_LOCOLIST_SETUP;
 				}

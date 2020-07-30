@@ -58,7 +58,7 @@ uint32_t loadLocoConfigFunctions(uint16_t offset, uint16_t functionStart)
 	uint32_t funcMask = (uint32_t)eeprom_read_byte((uint8_t*)functionStart + offset)<<24;
 	funcMask |= (uint32_t)eeprom_read_byte((uint8_t*)functionStart + offset+1)<<16;
 	funcMask |= (uint32_t)eeprom_read_byte((uint8_t*)functionStart + offset+2)<<8;
-	funcMask |= (uint32_t)eeprom_read_byte((uint8_t*)functionStart + offset);
+	funcMask |= (uint32_t)eeprom_read_byte((uint8_t*)functionStart + offset+3);
 	return funcMask;
 }
 
@@ -103,7 +103,11 @@ bool saveLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
 	} else {
 		addr = min(9999, locoConfig->address);
 	}
-
+	
+	locoConfig->allFunctions &= 0x1FFFFFFF;
+	locoConfig->fwdFunctions &= 0x1FFFFFFF;
+	locoConfig->revFunctions &= 0x1FFFFFFF;
+	
 	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_ADDR_H_OFFSET + offset, 0xFF & (addr>>8));
 	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_ADDR_L_OFFSET + offset, 0xFF & addr);
 	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_FLAGS_OFFSET + offset, flags1);

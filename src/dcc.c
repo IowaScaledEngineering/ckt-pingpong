@@ -35,13 +35,14 @@ uint16_t dcc_currentAddr;
 uint8_t dcc_currentSpeed;
 uint32_t dcc_currentFuncs;
 bool dcc_shortAddr;
-
+uint8_t dcc_sendResetCount;
 
 void dcc_init() 
 {
 	// DCC uses timer 1 in CTC mode, triggering OC1A and OC1B to toggle every
 	// half-bit.  
-	
+	dcc_reinit();
+
 	PORTD &= ~(_BV(PD4) | _BV(PD5));  // High impedence on initial power up
 	DDRD |= _BV(PD4) | _BV(PD5);
 	// Set to output ones by default
@@ -104,6 +105,13 @@ uint8_t dcc_setSpeedAndDir(uint16_t addr, bool isShortAddr, uint8_t speed, uint8
 	return 0;
 }
 
+void dcc_reinit()
+{
+	dcc_sendResetCount = 100;
+	dcc_currentSpeed = 0;
+	dcc_currentAddr = 65535;
+}
+
 void dcc_scheduler()
 {
 	static uint8_t dccStator = 0;
@@ -113,6 +121,24 @@ void dcc_scheduler()
 	// If there's no space in the "next" buffer yet, just get out
 	if (nextDCCPacket.len != 0)
 		return;
+		
+	if (dcc_sendResetCount)
+	{
+		dcc_sendResetCount--;
+		nextDCCPacket.data[0] = 0x00;
+		nextDCCPacket.data[1] = 0x00;
+		nextDCCPacket.len = 2;
+		return;
+	}
+	
+	if (dcc_currentAddr >= 10000)
+	{
+		// Just send idles
+		nextDCCPacket.data[0] = 0xFF;
+		nextDCCPacket.data[1] = 0x00;
+		nextDCCPacket.len = 2;
+		return;
+	}
 
 	if (dcc_shortAddr)
 	{
