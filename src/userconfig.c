@@ -17,12 +17,15 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 	memset(opsConfig, 0, sizeof(OpsConfiguration));
 
 	opsConfig->dcMode = (flags1 & OPSCONFIG_FLAGS1_DC_MODE)?true:false;
-	opsConfig->stopped = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;;
+	opsConfig->startPaused = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;;
 	
 	if(opsConfig->dcMode)
 		opsConfig->activeLocoConfig = 0;
 	else
 		opsConfig->activeLocoConfig = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO);
+	
+	opsConfig->delay = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY);
+
 
 }
 
@@ -43,7 +46,7 @@ void saveOpsConfiguration(OpsConfiguration* opsConfig)
 
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, flags1);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, min(opsConfig->activeLocoConfig, NUM_LOCO_OPTIONS));
-
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, opsConfig->delay);
 }
 
 void firstTimeInitOpsConfiguration()
@@ -51,6 +54,7 @@ void firstTimeInitOpsConfiguration()
 	// This should only be called if the application has decided to re-initialize configuration
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, 0);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, 1);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, 20);
 }
 
 uint32_t loadLocoConfigFunctions(uint16_t offset, uint16_t functionStart)

@@ -175,7 +175,18 @@ typedef enum
 	SCREEN_LOAD_CONF_SETUP = 120,
 	SCREEN_LOAD_CONF_DRAW = 121,
 	SCREEN_LOAD_CONF_IDLE = 122,
-	
+
+	SCREEN_CONF_DELAY_SETUP = 125,
+	SCREEN_CONF_DELAY_DRAW = 126,
+	SCREEN_CONF_DELAY_IDLE = 127,
+
+	SCREEN_CONF_PAUSED_SETUP = 130,
+	SCREEN_CONF_PAUSED_DRAW = 131,
+	SCREEN_CONF_PAUSED_IDLE = 132,
+
+	SCREEN_CONF_MANUAL_SETUP = 240,
+	SCREEN_CONF_MANUAL_DRAW  = 241,
+	SCREEN_CONF_MANUAL_IDLE  = 242,
 
 	SCREEN_CONF_RESET_SETUP = 245,
 	SCREEN_CONF_RESET_DRAW  = 246,
@@ -199,9 +210,11 @@ typedef struct
 const ConfigurationOption configurationOptions[] = 
 {
   { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
+  { "Endpoint Delay",     SCREEN_CONF_DELAY_SETUP },  
+  { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },  
   { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
-  { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
+  { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
 };
 
 #define NUM_CONF_OPTIONS  (sizeof(configurationOptions)/sizeof(ConfigurationOption))
@@ -430,16 +443,19 @@ typedef enum
 	STATE_FWDDECEL,
 } OpState;
 
+
+
 int main(void)
 {
 	uint8_t buttonsPressed=0;
 	uint8_t configMenuOption = 0;
-	uint16_t kloopsPerSec=0;
+	uint32_t kloopsPerSec=0;
 	uint8_t trackStatus = 0;
 	uint16_t inputVoltage=0, phaseAVoltage=0, phaseBVoltage=0, trackCurrent=0, trackVoltage=0;
 
 	char screenLineBuffer[21];
 	uint8_t configSaveU8 = 0;
+	uint8_t configSaveU8_2 = 0;
 	uint8_t configSaveFuncs[5];
 	uint8_t locoSlotOption = 0;
 	OpState opState = STATE_LEARN;
@@ -461,6 +477,7 @@ int main(void)
 	init();
 	initDebounceState(&d, 0xFF); // Initialize all high since all inputs are active low
 	loadOpsConfiguration(&opsConfig);
+	opsConfig.stopped = true;
 	loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
 	
 	if (opsConfig.dcMode)
@@ -473,6 +490,7 @@ int main(void)
 	loopCount = 0;
 
 	opState = STATE_LEARN;
+	opsConfig.stopped = opsConfig.startPaused;
 	opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
 
 	while (1)
@@ -537,6 +555,12 @@ int main(void)
 			case STATE_LEARN:
 				fwdSensorMask = 0;
 				revSensorMask = 0;
+
+				if (opsConfig.requestedSpeed >= 0)
+					opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
+				else
+					opsConfig.requestedSpeed = -(int16_t)currentLoco.maxSpeed * 100;
+
 				if (opsConfig.speed > 0)
 				{
 					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
@@ -599,7 +623,7 @@ int main(void)
 				opsConfig.requestedSpeed = 0;
 				if (0 == opsConfig.speed)
 				{
-					endStopDelay = 10;
+					endStopDelay = opsConfig.delay;
 					opState = STATE_RTOF_WAIT;
 				}
 				break;
@@ -608,7 +632,7 @@ int main(void)
 				opsConfig.requestedSpeed = 0;
 				if (0 == opsConfig.speed)
 				{
-					endStopDelay = 10;
+					endStopDelay = opsConfig.delay;
 					opState = STATE_FTOR_WAIT;
 				}
 				break;
@@ -764,7 +788,7 @@ int main(void)
 				lcd_putc('/');
 				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'*':'-');
 				
-				drawSoftKeys_p(opsConfig.dcMode?PSTR(""):PSTR("LOAD"),  PSTR("F<>R"), (opsConfig.stopped)?PSTR("RUN!"):PSTR("STOP"), PSTR("CONF"));
+				drawSoftKeys_p(opsConfig.dcMode?PSTR(""):PSTR("LOAD"),  PSTR("MANL"), (opsConfig.stopped)?PSTR("RUN!"):PSTR("STOP"), PSTR("CONF"));
 				buttonsPressed = 0;
 				screenState = SCREEN_MAIN_IDLE;
 				break;
@@ -783,8 +807,7 @@ int main(void)
 				}
 				else if (SOFTKEY_2 & buttonsPressed)
 				{
-					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
-					opState = STATE_LEARN;
+					screenState = SCREEN_CONF_MANUAL_SETUP;
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
@@ -831,7 +854,7 @@ int main(void)
 							lcd_gotoxy(0, i);
 							lcd_putc('>');
 						}
-
+						
 						loadLocoConfiguration(i+baseOptionCount+1, &tmpLocoConfig);
 						lcd_gotoxy(1, i);
 						
@@ -873,6 +896,8 @@ int main(void)
 					opsConfig.activeLocoConfig = locoSlotOption+1;
 					saveOpsConfiguration(&opsConfig);
 					loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
+					if (opsConfig.startPaused)
+						opsConfig.stopped = true;
 					opState = STATE_LEARN; // New locomotive, no guarantee it moves the same direction
 					screenState = SCREEN_MAIN_DRAW;
 				}
@@ -1330,6 +1355,122 @@ int main(void)
 
 				break;
 
+
+
+
+//  Loco Configuration Screen 2
+//  00000000001111111111
+//  01234567890123456789
+// [ENDPOINT DELAY      ]
+// [ Seconds: yy.ys     ]
+// [          ^         ]
+// [ +++  >>> SAVE CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+			case SCREEN_CONF_DELAY_SETUP:
+				lcd_clrscr();
+				lcd_puts_p(PSTR("Endpoint Delay"));
+				lcd_gotoxy(1, 1);
+				lcd_puts_p(PSTR("Seconds: "));
+				configSaveU8 = 10;
+				configSaveU8_2 = opsConfig.delay;
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
+				screenState = SCREEN_CONF_DELAY_DRAW;
+				break;
+
+			case SCREEN_CONF_DELAY_DRAW:
+				blankCursorLine();
+				lcd_gotoxy(10,1);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d.%01ds", configSaveU8_2/10, configSaveU8_2%10);
+				lcd_puts(screenLineBuffer);
+				lcd_gotoxy(configSaveU8, 2);
+				lcd_putc('^');
+				screenState = SCREEN_CONF_DELAY_IDLE;
+				break;
+
+			case SCREEN_CONF_DELAY_IDLE:
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
+				{
+					switch(configSaveU8)
+					{
+						case 10:
+							if (configSaveU8_2 > 155)
+								configSaveU8_2 %= 100;
+							else 
+								configSaveU8_2 += 100;
+							break;
+						case 11:
+							if ((configSaveU8_2 % 100) < 90)
+							{
+								if (configSaveU8_2 > 245)
+									configSaveU8_2 -= 10 * ((configSaveU8_2 / 10) % 10);
+								else
+									configSaveU8_2 += 10;
+							}
+							else
+								configSaveU8_2 -= 90;
+							break;
+							
+						case 13:
+							if ((configSaveU8_2 % 10) < 9)
+								if (configSaveU8_2 == 255)
+									configSaveU8_2 -= 5;
+								else
+									configSaveU8_2 += 1;
+							else
+								configSaveU8_2 -= 9;
+							break;
+							
+						default:
+							configSaveU8 = 10;
+							break;
+					}
+					screenState = SCREEN_CONF_DELAY_DRAW;
+				}
+				else if ((SOFTKEY_2 | SOFTKEY_2_LONG) & buttonsPressed)
+				{
+					switch(configSaveU8)
+					{
+						case 10:
+							configSaveU8 = 11;
+							break;
+
+						case 11:
+							configSaveU8 = 13;
+							break;
+							
+						case 13:
+							configSaveU8 = 10;
+							break;
+
+						default:
+							configSaveU8 = 10;
+							break;
+					}
+					screenState = SCREEN_CONF_DELAY_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					// Put the functions back in their bitmasks
+					opsConfig.delay = configSaveU8_2;
+					saveOpsConfiguration(&opsConfig);
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Cancel
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+
+				// Buttons handled, clear
+				buttonsPressed = 0;
+				break;
+
+
 			case SCREEN_CONF_MENU_DRAW:
 				lcd_clrscr();
 				drawSoftKeys_p((configMenuOption>0)?PSTR(" UP "):PSTR(""),  (configMenuOption < NUM_CONF_OPTIONS-1)?PSTR("DOWN"):PSTR(""), PSTR("SLCT"), PSTR("BACK"));
@@ -1388,15 +1529,15 @@ int main(void)
 				configSaveU8 = (opsConfig.dcMode)?1:0;
 				lcd_gotoxy(0,0);
 				lcd_puts("DC / DCC Mode");
-				drawSoftKeys_p(PSTR(" DC "),  PSTR("DCC"), PSTR("SAVE"), PSTR("CNCL"));
+				drawSoftKeys_p(PSTR("DCC"),  PSTR(" DC"), PSTR("SAVE"), PSTR("CNCL"));
 				// Intentional fall-through
 
 			case SCREEN_CONF_OUTPUT_DRAW:
 				lcd_gotoxy(0,1);
-				lcd_puts_p(PSTR("[ ] DC Trk Output"));
-				lcd_gotoxy(0,2);
 				lcd_puts_p(PSTR("[ ] DCC Trk Output"));
-				lcd_gotoxy(1, (configSaveU8)?1:2);
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] DC Trk Output"));
+				lcd_gotoxy(1, (configSaveU8)?2:1);
 				lcd_putc('*');
 				screenState = SCREEN_CONF_OUTPUT_IDLE;
 				break;
@@ -1404,12 +1545,12 @@ int main(void)
 			case SCREEN_CONF_OUTPUT_IDLE:
 				if (SOFTKEY_1 & buttonsPressed)
 				{
-					configSaveU8 = 1;
+					configSaveU8 = 0;
 					screenState = SCREEN_CONF_OUTPUT_DRAW;
 				}
 				else if (SOFTKEY_2 & buttonsPressed)
 				{
-					configSaveU8 = 0;
+					configSaveU8 = 1;
 					screenState = SCREEN_CONF_OUTPUT_DRAW;
 				}
 				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
@@ -1430,6 +1571,116 @@ int main(void)
 				}
 				// Buttons handled, clear
 				buttonsPressed = 0;	
+				break;
+
+//  Loco Configuration Screen 2
+//  00000000001111111111
+//  01234567890123456789
+// [Start Locomotive:   ]
+// [[ ] Running         ]
+// [[ ] Paused          ]
+// [ RUN  PAUS SAVE CNCL]
+
+			case SCREEN_CONF_PAUSED_SETUP:
+				lcd_clrscr();
+				configSaveU8 = (opsConfig.startPaused)?1:0;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Start Locomotive:"));
+				drawSoftKeys_p(PSTR("RUN"),  PSTR("PAUS"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_PAUSED_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Running"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] Paused"));
+				lcd_gotoxy(1, (configSaveU8)?2:1);
+				lcd_putc('*');
+				screenState = SCREEN_CONF_PAUSED_IDLE;
+				break;
+
+			case SCREEN_CONF_PAUSED_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8 = 0;
+					screenState = SCREEN_CONF_PAUSED_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8 = 1;
+					screenState = SCREEN_CONF_PAUSED_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.startPaused != (bool)configSaveU8))
+					{
+						opsConfig.startPaused = (bool)configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
+
+
+
+
+//  Loco Configuration Screen 2
+//  00000000001111111111
+//  01234567890123456789
+// [Manual Adjustment   ]
+// [ Run Speed: F%03d   ]
+// [                    ]
+// [ SPD+ SPD- F<>R CNCL]
+
+
+
+			case SCREEN_CONF_MANUAL_SETUP:
+				lcd_clrscr();
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Manual Adjustment"));
+				lcd_gotoxy(1,1);
+				lcd_puts_p(PSTR("Run Speed:"));
+				screenState = SCREEN_CONF_MANUAL_DRAW;
+				break;
+
+			case SCREEN_CONF_MANUAL_DRAW:
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", opsConfig.requestedSpeed<0?'R':'F', currentLoco.maxSpeed);
+				lcd_gotoxy(12, 1);
+				lcd_puts(screenLineBuffer);
+				drawSoftKeys_p((currentLoco.maxSpeed < 100)?PSTR("SPD+"):PSTR(""), (currentLoco.maxSpeed > 0)?PSTR("SPD-"):PSTR(""), PSTR("F<>R"), PSTR("BACK"));
+				screenState = SCREEN_CONF_MANUAL_IDLE;
+				break;
+
+			case SCREEN_CONF_MANUAL_IDLE:
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
+				{
+					if (currentLoco.maxSpeed < 100)
+						currentLoco.maxSpeed++;
+					screenState = SCREEN_CONF_MANUAL_DRAW;
+				}
+				else if ((SOFTKEY_2 | SOFTKEY_2_LONG) & buttonsPressed)
+				{
+					if (currentLoco.maxSpeed > 0)
+						currentLoco.maxSpeed--;
+					screenState = SCREEN_CONF_MANUAL_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+					opState = STATE_LEARN;
+					screenState = SCREEN_CONF_MANUAL_DRAW;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					lcd_clrscr();
+					screenState = SCREEN_MAIN_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;
 				break;
 
 			case SCREEN_CONF_RESET_SETUP:
@@ -1467,6 +1718,8 @@ int main(void)
 					drawSoftKeys_p(PSTR(""), PSTR("YES!"), PSTR(""), PSTR("CNCL"));
 				}
 				screenState = SCREEN_CONF_RESET_IDLE;
+				// Buttons handled, clear
+				buttonsPressed = 0;	
 				break;
 
 			case SCREEN_CONF_RESET_IDLE:
@@ -1497,13 +1750,123 @@ int main(void)
 				buttonsPressed = 0;	
 				break;
 
+//  Diagnostic Screen
+//  00000000001111111111
+//  01234567890123456789
+// [V:vv.vV FDC 00000l/s]
+// [A:vv.v B:vv.v I:a.aa]
+// [S:L-(L)/R-(L) ... nn]
+// [PHSA PHSB      BACK ]
+// F:n - n=Y/N for faulted
+
+			case SCREEN_CONF_DIAG_SETUP:
+				lcd_clrscr();
+				drawSoftKeys_p(PSTR(""), PSTR(""), PSTR(""), PSTR("BACK"));
+				screenState = SCREEN_CONF_DIAG_DRAW;
+				break;
+				
+			case SCREEN_CONF_DIAG_DRAW:
+				configSaveU8 = decisecs;
+				{
+					const char* outMode = "DCC";
+					char opStateStr[4];
+					char leftSensorAssignment = '?';
+					char rightSensorAssignment = '?';
+					
+					if (opsConfig.dcMode)
+						outMode = "*DC";
+					if (trackStatus & TRACK_STATUS_FAULTED)
+						outMode = "FLT";
+					lcd_gotoxy(0,0);
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "V:%02d.%01dV %s %05lul/s", inputVoltage/10, inputVoltage%10, outMode, kloopsPerSec);
+					lcd_puts(screenLineBuffer);
+
+					lcd_gotoxy(0,1);
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "A:%02d.%01d B:%02d.%01d I:%01d.%02d", 
+						phaseAVoltage/10, phaseAVoltage%10, phaseBVoltage/10, phaseBVoltage%10, trackCurrent/100, trackCurrent%100);
+					lcd_puts(screenLineBuffer);
+
+					lcd_gotoxy(0,2);
+					if (TRACK_STATUS_SENSOR_LEFT == fwdSensorMask)
+						leftSensorAssignment = 'F';
+					else if (TRACK_STATUS_SENSOR_LEFT == revSensorMask)
+						leftSensorAssignment = 'R';
+
+					if (TRACK_STATUS_SENSOR_RIGHT == fwdSensorMask)
+						rightSensorAssignment = 'F';
+					else if (TRACK_STATUS_SENSOR_RIGHT == revSensorMask)
+						rightSensorAssignment = 'R';
+
+					switch(opState)
+					{
+						case STATE_LEARN:
+							strcpy(opStateStr, "LRN");
+							break;
+						case STATE_FTOR_WAIT:
+							strcpy(opStateStr, "FTR");
+							break;
+						case STATE_RTOF_WAIT:
+							strcpy(opStateStr, "RTF");
+							break;
+						case STATE_REVERSE:
+							strcpy(opStateStr, "REV");
+							break;
+						case STATE_FORWARD:
+							strcpy(opStateStr, "FWD");
+							break;
+						case STATE_REVDECEL:
+							strcpy(opStateStr, "RDC");
+							break;
+						case STATE_FWDDECEL:
+							strcpy(opStateStr, "FDC");
+							break;
+						default:
+							snprintf(opStateStr, sizeof(opStateStr), "%03d", opState);
+							break;
+					}
+
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "S:L%c(%c)/R%c(%c) %s %02d", (trackStatus & TRACK_STATUS_SENSOR_LEFT)?'*':'-', 
+						leftSensorAssignment, (trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'*':'-', rightSensorAssignment, opStateStr, endStopDelay/10);
+					lcd_puts(screenLineBuffer);
+				}
+				screenState = SCREEN_CONF_DIAG_IDLE;
+				break;
+				
+			case SCREEN_CONF_DIAG_IDLE:
+				if (SOFTKEY_4 & buttonsPressed)
+				{
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				} else if (configSaveU8 != decisecs)
+					screenState = SCREEN_CONF_DIAG_DRAW;
+				buttonsPressed = 0;
+				break;
+
+
+//  Error Screen
+//  00000000001111111111
+//  01234567890123456789
+// [Oh No!              ]
+// [   Unable to draw   ]
+// [    screen %03d     ]
+// [   PRESS ANY KEY    ]
 
 			default:
-				lcd_gotoxy(0,1);
-				lcd_puts_p(PSTR("Code off in lalaland"));
-				lcd_gotoxy(0,2);
-				lcd_puts_p(PSTR("Call Nathan"));
-
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("OH NO!  ERROR!"));
+				lcd_gotoxy(3,1);
+				lcd_puts_p(PSTR("Unable to draw"));
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "screen %03d", screenState);
+				lcd_gotoxy(3,2);
+				lcd_puts(screenLineBuffer);
+				lcd_gotoxy(3,3);
+				lcd_puts_p(PSTR("PRESS ANY KEY"));
+				if ((SOFTKEY_1 | SOFTKEY_2 | SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					lcd_clrscr();
+					screenState = SCREEN_MAIN_DRAW;
+				}
+				buttonsPressed = 0;
 				break;
 		}
 
@@ -1517,7 +1880,7 @@ int main(void)
 			}
 			
 			screenUpdateDecisecs -= 10;
-			kloopsPerSec = loopCount / 1000;
+			kloopsPerSec = loopCount;
 			loopCount = 0;
 		}
 	}

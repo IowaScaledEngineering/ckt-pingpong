@@ -43,23 +43,23 @@ void dcc_init()
 	// half-bit.  
 	dcc_reinit();
 
-	PORTD &= ~(_BV(PD4) | _BV(PD5));  // High impedence on initial power up
+	PORTD |= _BV(PD4) | _BV(PD5);
 	DDRD |= _BV(PD4) | _BV(PD5);
 	// Set to output ones by default
 	OCR1A = OCR1B = DCC_ONE_HALF_BIT;
+	ICR1 = 0xFFFF;
 
 	TCCR1B = 0;
-	TCCR1B &= ~(_BV(CS12) | _BV(CS11) | _BV(CS10)); // Stop the timer for the moment
 	TCNT1 = 0; // Reset the timer
-
 	TCCR1A = _BV(COM1A0) | _BV(COM1B0); // OC1A and OC1B both toggle
-
+	TCCR1B = _BV(WGM12);
+	
 	// If the outputs are the same, toggle ones
-	if ((bool)(PIND & _BV(PD4)) == (bool)(PIND & _BV(PD5)))
+	while((bool)(PIND & _BV(PD4)) == (bool)(PIND & _BV(PD5)))
 		TCCR1C = _BV(FOC1A);
-
-	TCCR1B = _BV(WGM12) | _BV(CS10);
+	
 	TIMSK1 |= _BV(OCIE1A);
+	TCCR1B = _BV(WGM12) | _BV(CS10);
 }
 
 void dcc_stop()
@@ -91,16 +91,23 @@ uint8_t dcc_setSpeedAndDir(uint16_t addr, bool isShortAddr, uint8_t speed, uint8
 	// In DCC, a high bit on the speed is forward
 	dcc_currentSpeed |= (direction?0x00:0x80);
 
-	if (isShortAddr)
+	if (0 == addr)
 	{
+		// Broadcast
+		dcc_shortAddr = true;
+		dcc_currentAddr = 0;
+	}
+	else if (isShortAddr)
+	{
+		// Short address
 		dcc_currentAddr = max(1, min(addr, 127));
 		dcc_shortAddr = true;
 	} else {
+		// Long address
 		dcc_currentAddr = max(1, min(addr, 9999));
 		dcc_shortAddr = false;
 	}
 	dcc_currentFuncs = functions;
-	dcc_shortAddr = isShortAddr;
 	
 	return 0;
 }

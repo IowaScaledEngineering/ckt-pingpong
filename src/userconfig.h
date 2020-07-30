@@ -19,16 +19,19 @@ typedef struct
 	// Loaded from EEP
 	bool dcMode;
 	uint8_t activeLocoConfig;
-	bool stopped;
+	bool startPaused;
 	
 	// Runtime elements
+	bool stopped;
 	int16_t speed;
 	int16_t requestedSpeed;
 	uint8_t direction;
+	uint8_t delay;
 } OpsConfiguration;
 
 #define EEP_OPSCONFIG_FLAGS1         0x0000
 #define EEP_OPSCONFIG_ACTIVE_LOCO    0x0001
+#define EEP_OPSCONFIG_ENDPOINT_DELAY 0x0002
 
 #define OPSCONFIG_FLAGS1_DC_MODE     0x01
 #define OPSCONFIG_FLAGS1_INIT_STOP   0x02
