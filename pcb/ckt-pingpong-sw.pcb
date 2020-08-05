@@ -8,8 +8,8 @@ PCB["" 2000.00mil 2000.00mil]
 Grid[500.000000 0.0000 0.0000 0]
 PolyArea[200000000.000000]
 Thermal[0.500000]
-DRC[8.00mil 5.00mil 8.00mil 6.00mil 12.00mil 6.00mil]
-Flags("showdrc,nameonpcb,clearnew,snappin")
+DRC[10.00mil 5.00mil 10.00mil 6.00mil 12.00mil 6.00mil]
+Flags("showdrc,rubberband,nameonpcb,clearnew,snappin")
 Groups("1,c:2,s:3")
 Styles["Signal,10.00mil,24.00mil,12.00mil,8.00mil:Power,25.00mil,60.00mil,35.00mil,10.00mil:Fat,40.00mil,60.00mil,35.00mil,10.00mil:Skinny,8.00mil,24.00mil,12.00mil,8.00mil"]
 
@@ -814,8 +814,8 @@ Element["" "Terminal Block" "" "" 1755.00mil 1650.00mil -10.00mil 0.0000 1 100 "
 
 Element["" "Terminal Block" "" "" 1000.00mil 1755.00mil -20.00mil 45.00mil 2 100 ""]
 (
-	Pin[-100.00mil 0.0000 80.00mil 30.00mil 86.00mil 48.00mil "Pin_2" "1" "square,edge2"]
-	Pin[100.00mil 0.0000 80.00mil 30.00mil 86.00mil 48.00mil "Pin_3" "2" "edge2"]
+	Pin[-100.00mil 0.0000 80.00mil 30.00mil 86.00mil 48.00mil "Pin_2" "1" "square,edge2,thermal(1X)"]
+	Pin[100.00mil 0.0000 80.00mil 30.00mil 86.00mil 48.00mil "Pin_3" "2" "edge2,thermal(1X)"]
 	ElementLine [-200.00mil 128.00mil 200.00mil 128.00mil 10.00mil]
 	ElementLine [-200.00mil -172.00mil 200.00mil -172.00mil 10.00mil]
 	ElementLine [-200.00mil -128.00mil 200.00mil -128.00mil 10.00mil]
@@ -827,10 +827,10 @@ Element["" "Terminal Block" "" "" 1000.00mil 1755.00mil -20.00mil 45.00mil 2 100
 Element["onsolder" "TE Connectivity A203J51ZQ0004 Rocker Switch" "" "" 1000.00mil 1000.00mil 0.0000 0.0000 0 100 "auto"]
 (
 	Pin[-185.00mil -95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "1" "1" "edge2"]
-	Pin[0.0000 -95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "2" "2" "edge2"]
+	Pin[0.0000 -95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "2" "2" "edge2,thermal(1X)"]
 	Pin[185.00mil -95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "3" "3" "edge2"]
 	Pin[-185.00mil 95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "4" "4" "edge2"]
-	Pin[0.0000 95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "5" "5" "edge2"]
+	Pin[0.0000 95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "5" "5" "edge2,thermal(1X)"]
 	Pin[185.00mil 95.00mil 118.00mil 20.00mil 124.00mil 88.00mil "6" "6" "edge2"]
 	ElementLine [-250.00mil -225.00mil 250.00mil -225.00mil 10.00mil]
 	ElementLine [250.00mil 225.00mil 250.00mil -225.00mil 10.00mil]
@@ -840,43 +840,51 @@ Element["onsolder" "TE Connectivity A203J51ZQ0004 Rocker Switch" "" "" 1000.00mi
 	)
 Layer(1 "top")
 (
-	Line[850.00mil 705.00mil 700.00mil 855.00mil 70.00mil 16.00mil "clearline"]
-	Line[700.00mil 855.00mil 700.00mil 980.00mil 70.00mil 16.00mil "clearline"]
-	Line[700.00mil 980.00mil 815.00mil 1095.00mil 70.00mil 16.00mil "clearline"]
-	Line[1430.00mil 790.00mil 930.00mil 790.00mil 70.00mil 16.00mil "clearline"]
-	Line[930.00mil 790.00mil 815.00mil 905.00mil 70.00mil 16.00mil "clearline"]
-	Line[850.00mil 705.00mil 1630.00mil 705.00mil 70.00mil 16.00mil "clearline"]
-	Line[1630.00mil 705.00mil 1755.00mil 830.00mil 70.00mil 16.00mil "clearline"]
-	Line[1755.00mil 830.00mil 1755.00mil 1550.00mil 70.00mil 16.00mil "clearline"]
-	Line[1430.00mil 790.00mil 1615.00mil 975.00mil 70.00mil 16.00mil "clearline"]
-	Line[1615.00mil 975.00mil 1615.00mil 1610.00mil 70.00mil 16.00mil "clearline"]
-	Line[1615.00mil 1610.00mil 1755.00mil 1750.00mil 70.00mil 16.00mil "clearline"]
-	Line[245.00mil 900.00mil 425.00mil 900.00mil 70.00mil 16.00mil "clearline"]
-	Line[425.00mil 900.00mil 735.00mil 1210.00mil 70.00mil 16.00mil "clearline"]
-	Line[735.00mil 1210.00mil 1070.00mil 1210.00mil 70.00mil 16.00mil "clearline"]
-	Line[1070.00mil 1210.00mil 1185.00mil 1095.00mil 70.00mil 16.00mil "clearline"]
-	Line[1185.00mil 905.00mil 1310.00mil 1030.00mil 70.00mil 16.00mil "clearline"]
-	Line[1310.00mil 1030.00mil 1310.00mil 1150.00mil 70.00mil 16.00mil "clearline"]
-	Line[1310.00mil 1150.00mil 1155.00mil 1305.00mil 70.00mil 16.00mil "clearline"]
-	Line[1155.00mil 1305.00mil 450.00mil 1305.00mil 70.00mil 16.00mil "clearline"]
-	Line[450.00mil 1305.00mil 245.00mil 1100.00mil 70.00mil 16.00mil "clearline"]
+	Line[1755.00mil 1550.00mil 1755.00mil 920.00mil 120.00mil 16.00mil "clearline"]
+	Line[1755.00mil 920.00mil 1610.00mil 775.00mil 120.00mil 16.00mil "clearline"]
+	Line[1610.00mil 775.00mil 945.00mil 775.00mil 120.00mil 16.00mil "clearline"]
+	Line[945.00mil 775.00mil 815.00mil 905.00mil 120.00mil 16.00mil "clearline"]
+	Line[1755.00mil 1750.00mil 1890.00mil 1615.00mil 120.00mil 16.00mil "clearline"]
+	Line[1890.00mil 1615.00mil 1890.00mil 865.00mil 120.00mil 16.00mil "clearline"]
+	Line[1890.00mil 865.00mil 1665.00mil 640.00mil 120.00mil 16.00mil "clearline"]
+	Line[1665.00mil 640.00mil 885.00mil 640.00mil 120.00mil 16.00mil "clearline"]
+	Line[885.00mil 640.00mil 680.00mil 845.00mil 120.00mil 16.00mil "clearline"]
+	Line[680.00mil 845.00mil 680.00mil 960.00mil 120.00mil 16.00mil "clearline"]
+	Line[680.00mil 960.00mil 815.00mil 1095.00mil 120.00mil 16.00mil "clearline"]
+	Line[245.00mil 900.00mil 400.00mil 900.00mil 120.00mil 16.00mil "clearline"]
+	Line[400.00mil 900.00mil 745.00mil 1245.00mil 120.00mil 16.00mil "clearline"]
+	Line[745.00mil 1245.00mil 1125.00mil 1245.00mil 120.00mil 16.00mil "clearline"]
+	Line[1125.00mil 1245.00mil 1185.00mil 1185.00mil 120.00mil 16.00mil "clearline"]
+	Line[1185.00mil 1185.00mil 1185.00mil 1095.00mil 120.00mil 16.00mil "clearline"]
+	Line[245.00mil 1100.00mil 400.00mil 1100.00mil 120.00mil 16.00mil "clearline"]
+	Line[400.00mil 1100.00mil 685.00mil 1385.00mil 120.00mil 16.00mil "clearline"]
+	Line[685.00mil 1385.00mil 1185.00mil 1385.00mil 120.00mil 16.00mil "clearline"]
+	Line[1185.00mil 1385.00mil 1325.00mil 1245.00mil 120.00mil 16.00mil "clearline"]
+	Line[1325.00mil 1245.00mil 1325.00mil 1045.00mil 120.00mil 16.00mil "clearline"]
+	Line[1325.00mil 1045.00mil 1185.00mil 905.00mil 120.00mil 16.00mil "clearline"]
 )
 Layer(2 "bottom")
 (
-	Line[900.00mil 1755.00mil 1000.00mil 1655.00mil 70.00mil 16.00mil "clearline"]
-	Line[1000.00mil 1655.00mil 1000.00mil 1095.00mil 70.00mil 16.00mil "clearline"]
-	Line[1100.00mil 1755.00mil 1310.00mil 1545.00mil 70.00mil 16.00mil "clearline"]
-	Line[1310.00mil 1545.00mil 1310.00mil 860.00mil 70.00mil 16.00mil "clearline"]
-	Line[1310.00mil 860.00mil 1235.00mil 785.00mil 70.00mil 16.00mil "clearline"]
-	Line[1235.00mil 785.00mil 1120.00mil 785.00mil 70.00mil 16.00mil "clearline"]
-	Line[1120.00mil 785.00mil 1000.00mil 905.00mil 70.00mil 16.00mil "clearline"]
+	Polygon("clearpoly")
+	(
+		[25.00mil 1975.00mil] [980.00mil 1975.00mil] [980.00mil 1005.00mil] [25.00mil 1005.00mil] 
+	)
+	Polygon("clearpoly")
+	(
+		[1975.00mil 1975.00mil] [1020.00mil 1975.00mil] [1020.00mil 1200.00mil] [1185.00mil 1200.00mil] [1185.00mil 995.00mil] 
+		[900.00mil 995.00mil] [900.00mil 575.00mil] [1975.00mil 575.00mil] 
+	)
+	Polygon("clearpoly")
+	(
+		[905.00mil 1005.00mil] [1100.00mil 1005.00mil] [1100.00mil 1185.00mil] [905.00mil 1185.00mil] 
+	)
 )
 Layer(3 "outline")
 (
-	Line[2000.00mil 650.00mil 0.0000 650.00mil 10.00mil 16.00mil "clearline"]
-	Line[0.0000 650.00mil 0.0000 2000.00mil 10.00mil 16.00mil "clearline"]
+	Line[0.0000 550.00mil 0.0000 2000.00mil 10.00mil 16.00mil "clearline"]
 	Line[0.0000 2000.00mil 2000.00mil 2000.00mil 10.00mil 16.00mil "clearline"]
-	Line[2000.00mil 2000.00mil 2000.00mil 650.00mil 10.00mil 16.00mil "clearline"]
+	Line[2000.00mil 2000.00mil 2000.00mil 550.00mil 10.00mil 16.00mil "clearline"]
+	Line[2000.00mil 550.00mil 0.0000 550.00mil 10.00mil 16.00mil "clearline"]
 )
 Layer(4 "bottom silk")
 (
