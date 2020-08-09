@@ -18,6 +18,7 @@ typedef struct
 {
 	// Loaded from EEP
 	bool dcMode;
+	bool intStopsEnable;
 	uint8_t activeLocoConfig;
 	bool startPaused;
 	
@@ -26,15 +27,20 @@ typedef struct
 	int16_t speed;
 	int16_t requestedSpeed;
 	uint8_t direction;
-	uint8_t delay;
+	uint8_t endpointDelay;
+	uint8_t midpointDelay;
+	uint8_t backlightTimeout;
 } OpsConfiguration;
 
-#define EEP_OPSCONFIG_FLAGS1         0x0000
-#define EEP_OPSCONFIG_ACTIVE_LOCO    0x0001
-#define EEP_OPSCONFIG_ENDPOINT_DELAY 0x0002
+#define EEP_OPSCONFIG_FLAGS1          0x0000
+#define EEP_OPSCONFIG_ACTIVE_LOCO     0x0001
+#define EEP_OPSCONFIG_ENDPOINT_DELAY  0x0002
+#define EEP_OPSCONFIG_BACKLIGHT_DELAY 0x0003
+#define EEP_OPSCONFIG_MIDPOINT_DELAY  0x0004
 
-#define OPSCONFIG_FLAGS1_DC_MODE     0x01
-#define OPSCONFIG_FLAGS1_INIT_STOP   0x02
+#define OPSCONFIG_FLAGS1_DC_MODE      0x01
+#define OPSCONFIG_FLAGS1_INIT_STOP    0x02
+#define OPSCONFIG_FLAGS1_INT_STOPS_EN 0x04
 
 void loadOpsConfiguration(OpsConfiguration* opsConfig);
 void saveOpsConfiguration(OpsConfiguration* opsConfig);

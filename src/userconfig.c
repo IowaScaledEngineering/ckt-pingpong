@@ -17,15 +17,17 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 	memset(opsConfig, 0, sizeof(OpsConfiguration));
 
 	opsConfig->dcMode = (flags1 & OPSCONFIG_FLAGS1_DC_MODE)?true:false;
-	opsConfig->startPaused = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;;
+	opsConfig->intStopsEnable = (flags1 & OPSCONFIG_FLAGS1_INT_STOPS_EN)?true:false;
+	opsConfig->startPaused = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;
 	
 	if(opsConfig->dcMode)
 		opsConfig->activeLocoConfig = 0;
 	else
 		opsConfig->activeLocoConfig = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO);
 	
-	opsConfig->delay = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY);
-
+	opsConfig->endpointDelay = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY);
+	opsConfig->midpointDelay = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY);
+	opsConfig->backlightTimeout = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY);
 
 }
 
@@ -43,10 +45,16 @@ void saveOpsConfiguration(OpsConfiguration* opsConfig)
 	// 0x0001 - Active DCC Locomotive Configuration # (0-15)
 	if (opsConfig->dcMode)
 		flags1 |= OPSCONFIG_FLAGS1_DC_MODE;
-
+	if (opsConfig->intStopsEnable)
+		flags1 |= OPSCONFIG_FLAGS1_INT_STOPS_EN;
+	if (opsConfig->startPaused)
+		flags1 |= OPSCONFIG_FLAGS1_INIT_STOP;
+	
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, flags1);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, min(opsConfig->activeLocoConfig, NUM_LOCO_OPTIONS));
-	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, opsConfig->delay);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, opsConfig->endpointDelay);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, opsConfig->midpointDelay);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, opsConfig->backlightTimeout);
 }
 
 void firstTimeInitOpsConfiguration()
@@ -54,7 +62,9 @@ void firstTimeInitOpsConfiguration()
 	// This should only be called if the application has decided to re-initialize configuration
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, 0);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, 1);
-	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, 20);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, 2);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, 0);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, 2);
 }
 
 uint32_t loadLocoConfigFunctions(uint16_t offset, uint16_t functionStart)
