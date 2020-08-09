@@ -950,7 +950,12 @@ int main(void)
 						case STATE_FWDINTWAIT:
 							strcpy(opStateStr, "FIW ");
 							break;
-
+						case STATE_REVINTACCEL:
+							strcpy(opStateStr, "RIA ");
+							break;
+						case STATE_FWDINTACCEL:
+							strcpy(opStateStr, "FIA ");
+							break;
 
 
 						default:
