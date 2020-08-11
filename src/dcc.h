@@ -47,11 +47,28 @@ typedef struct
 	uint8_t len;
 } DCCPacket;
 
+typedef struct 
+{
+	unsigned int address :  11;
+	unsigned int state :  1;
+	unsigned int count : 2;
+} AccChange;
+
+typedef struct
+{
+	uint8_t headIdx;
+	uint8_t tailIdx;
+	bool full;
+	AccChange* pktBufferArray;
+	uint8_t pktBufferArraySz;
+} AccChangeQueue;
+
 void dcc_init();
 void dcc_stop();
 void dcc_reinit();
 extern volatile DCCPacket nextDCCPacket;  // This is the next packet the DCC ISR will send when ready
 uint8_t dcc_setSpeedAndDir(uint16_t addr, bool isShortAddr, uint8_t speed, uint8_t direction, uint32_t functions);
 void dcc_scheduler();
+uint8_t accPktQueuePush(uint16_t address, bool state);
 
 #endif

@@ -37,6 +37,90 @@ uint32_t dcc_currentFuncs;
 bool dcc_shortAddr;
 uint8_t dcc_sendResetCount;
 
+AccChange accChangeArray[16];
+AccChangeQueue accq;
+
+
+void accPktQueueInitialize(AccChangeQueue* q, AccChange* pktBufferArray, uint8_t pktBufferArraySz)
+{
+	q->pktBufferArray = pktBufferArray;
+	q->pktBufferArraySz = pktBufferArraySz;
+	q->headIdx = q->tailIdx = 0;
+	q->full = false;
+	memset(q->pktBufferArray, 0, pktBufferArraySz * sizeof(AccChange));
+}
+
+uint8_t accPktQueueDepth(AccChangeQueue* q)
+{
+	uint8_t result = 0;
+	if(q->full)
+		return(q->pktBufferArraySz);
+
+	result = (uint8_t)(q->headIdx - q->tailIdx) % q->pktBufferArraySz;
+	return(result);
+}
+
+uint8_t accPktQueuePush(uint16_t address, bool state)
+{
+	AccChangeQueue* q = &accq;
+	// If full, bail with a false
+	if (q->full)
+		return(0);
+
+	q->pktBufferArray[q->headIdx].address = address;
+	q->pktBufferArray[q->headIdx].state = state?1:0;
+	q->pktBufferArray[q->headIdx].count = 3;
+
+	if( ++q->headIdx >= q->pktBufferArraySz )
+		q->headIdx = 0;
+
+	if (q->headIdx == q->tailIdx)
+		q->full = true;
+	return(1);
+}
+
+uint8_t accPktQueuePopDCCPacket(AccChangeQueue* q, uint8_t* dccData, uint8_t dccDataSz)
+{
+	uint8_t len = 0;
+	uint16_t addr = 0;
+	memset(dccData, 0, dccDataSz);
+	if (0 == accPktQueueDepth(q))
+		return(0);
+
+	// Form accessory packet here
+	addr = q->pktBufferArray[q->headIdx].address;
+	dccData[0] = 0x80 | (0x3F & (addr >> 5));
+	dccData[1] = 0x80 | (0x70 ^ (0x70 & (addr<<2)));
+	dccData[1] |= (0x06 & (addr<<1));
+	if (q->pktBufferArray[q->headIdx].state)
+		dccData[1] |= 0x01;
+	
+	len = 2;
+
+	// If count-- is zero, go ahead and pop it out
+	if (--q->pktBufferArray[q->tailIdx].count != 0)
+		return(len);
+
+	if( ++q->tailIdx >= q->pktBufferArraySz )
+		q->tailIdx = 0;
+	q->full = false;
+
+	return(len);
+}
+
+uint8_t accPktQueueDrop(AccChangeQueue* q)
+{
+	if (0 == accPktQueueDepth(q))
+		return(0);
+
+	if( ++q->tailIdx >= q->pktBufferArraySz )
+		q->tailIdx = 0;
+	q->full = false;
+
+	return(1);
+}
+
+
 void dcc_init() 
 {
 	// DCC uses timer 1 in CTC mode, triggering OC1A and OC1B to toggle every
@@ -60,6 +144,8 @@ void dcc_init()
 	
 	TIMSK1 |= _BV(OCIE1A);
 	TCCR1B = _BV(WGM12) | _BV(CS10);
+	
+	accPktQueueInitialize(&accq, accChangeArray, sizeof(accChangeArray) / sizeof(AccChange));
 }
 
 void dcc_stop()
@@ -168,9 +254,15 @@ void dcc_scheduler()
 		case 7:
 		case 9:
 		case 11:
-			nextDCCPacket.data[0] = 0xFF;
-			nextDCCPacket.data[1] = 0x00;
-			nextDCCPacket.len = 2;
+			// If we have a accessory packet, send it here
+			nextDCCPacket.len = accPktQueuePopDCCPacket(&accq, (uint8_t*)nextDCCPacket.data, sizeof(nextDCCPacket.data));
+			if (0 == nextDCCPacket.len)
+			{
+				// If we get zero len back, there's no acc packet to send, so just send idle
+				nextDCCPacket.data[0] = 0xFF;
+				nextDCCPacket.data[1] = 0x00;
+				nextDCCPacket.len = 2;
+			}
 			break;
 		
 		case 2:

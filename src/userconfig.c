@@ -10,6 +10,25 @@
 #include "macros.h"
 
 
+const char* getAccModeText(AccOperationMode mode)
+{
+	switch(mode)
+	{
+		case ACC_DISBL:
+			return("DISBL");
+		case ACC_LS_RC:
+			return("LS-RC");
+		case ACC_LC_RS:
+			return("LC-RS");
+		case ACC_LSTOG:
+			return ("LSTOG");
+		case ACC_RSTOG:
+			return ("RSTOG");
+	}
+	return ("UNDEF");
+}
+
+
 void loadOpsConfiguration(OpsConfiguration* opsConfig)
 {
 	uint8_t flags1 = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1);
@@ -184,9 +203,55 @@ void firstTimeInitLocoConfiguration()
 	}
 }
 
+void saveAccConfiguration(uint8_t whichConfig, AccConfig* accConfig)
+{
+	uint16_t offset = EEP_ACCCONFIG_MEM_START_ADDR + (uint16_t)EEP_ACCCONFIG_BLOCK_SIZE * min(whichConfig, NUM_ACC_OPTIONS);
+	uint8_t t = 0;
+
+	eeprom_write_byte((uint8_t*)EEP_ACCCONFIG_ADDR_H_OFFSET + offset, 0xFF & (accConfig->address>>8));
+	eeprom_write_byte((uint8_t*)EEP_ACCCONFIG_ADDR_L_OFFSET + offset, 0xFF & accConfig->address);
+	eeprom_write_byte((uint8_t*)EEP_ACCCONFIG_MODE_OFFSET + offset, accConfig->trigMode);
+	
+	if(accConfig->startState)
+		t |= ACCCONFIG_FLAGS1_START_SET;
+		
+	eeprom_write_byte((uint8_t*)EEP_ACCCONFIG_FLAGS1_OFFSET + offset, t);
+}
+
+
+void loadAccConfiguration(uint8_t whichConfig, AccConfig* accConfig)
+{
+	uint16_t offset = EEP_ACCCONFIG_MEM_START_ADDR + (uint16_t)EEP_ACCCONFIG_BLOCK_SIZE * min(whichConfig, NUM_ACC_OPTIONS);
+	uint8_t t = 0;
+
+	memset(accConfig, 0, sizeof(AccConfig));
+	accConfig->address = ((uint16_t)eeprom_read_byte((uint8_t*)EEP_ACCCONFIG_ADDR_H_OFFSET + offset)<<8) 
+		| eeprom_read_byte((uint8_t*)EEP_ACCCONFIG_ADDR_L_OFFSET + offset);
+
+	accConfig->trigMode = eeprom_read_byte((uint8_t*)EEP_ACCCONFIG_MODE_OFFSET + offset);
+	t = eeprom_read_byte((uint8_t*)EEP_ACCCONFIG_FLAGS1_OFFSET + offset);
+	
+	accConfig->startState = (t & ACCCONFIG_FLAGS1_START_SET)?true:false;
+}
+
+void firstTimeInitAccConfig()
+{
+	AccConfig acc;
+	
+	memset(&acc, 0, sizeof(AccConfig));
+	acc.address = 0;
+	acc.startState = false;
+	acc.trigMode = ACC_DISBL;
+	for(uint8_t i=0; i<NUM_ACC_OPTIONS; i++)
+	{
+		saveAccConfiguration(i, &acc);
+	}
+}
+
 void firstTimeInitConfig()
 {
 	firstTimeInitOpsConfiguration();
 	firstTimeInitLocoConfiguration();
+	firstTimeInitAccConfig();
 }
 

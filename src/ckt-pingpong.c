@@ -20,6 +20,15 @@ LICENSE:
 
 *************************************************************************/
 
+
+
+
+// DCC packet format   10AAAAAA  0  1AAACDDD
+// Address AAAAAAAAADDD
+
+
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -97,6 +106,15 @@ uint8_t debounce(uint16_t raw_inputs, DebounceState* d)
 	return(changes & ~(d->debounced_state));
 }
 
+
+#define TRACK_STATUS_SENSOR_LEFT      0x80
+#define TRACK_STATUS_SENSOR_RIGHT     0x40
+#define TRACK_STATUS_FAULTED          0x20
+#define TRACK_STATUS_SENSOR_MIDPNT    0x10
+#define TRACK_STATUS_SENSOR_INT_LEFT  0x08
+#define TRACK_STATUS_SENSOR_INT_RIGHT 0x04
+#define TRACK_STATUS_STOPPED          0x01
+
 volatile uint16_t adcValue[4];
 
 void initializeADC()
@@ -162,6 +180,7 @@ typedef enum
 	SCREEN_CONF_OUTPUT_DRAW  = 101,
 	SCREEN_CONF_OUTPUT_IDLE  = 102,
 
+
 	SCREEN_CONF_LOCOLIST_SETUP = 105,
 	SCREEN_CONF_LOCOLIST_DRAW  = 106,
 	SCREEN_CONF_LOCOLIST_IDLE  = 107,
@@ -194,6 +213,14 @@ typedef enum
 	SCREEN_CONF_INTSENSE_DRAW  = 141,
 	SCREEN_CONF_INTSENSE_IDLE  = 142,
 
+	SCREEN_CONF_ACCLIST_SETUP = 145,
+	SCREEN_CONF_ACCLIST_DRAW  = 146,
+	SCREEN_CONF_ACCLIST_IDLE  = 147,
+
+	SCREEN_CONF_ACCCONF_SETUP  = 150,
+	SCREEN_CONF_ACCCONF_DRAW   = 151,
+	SCREEN_CONF_ACCCONF_IDLE   = 152,
+
 	SCREEN_CONF_BACKLITE_SETUP = 235,
 	SCREEN_CONF_BACKLITE_DRAW  = 236,
 	SCREEN_CONF_BACKLITE_IDLE  = 237,
@@ -224,6 +251,7 @@ typedef struct
 const ConfigurationOption configurationOptions[] = 
 {
   { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
+  { "Accessory Config",   SCREEN_CONF_ACCLIST_SETUP },
   { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
   { "Endpoint Delay",     SCREEN_CONF_DELAY_SETUP },
   { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
@@ -377,6 +405,46 @@ void drawSplashScreen()
 	lcd_clrscr();
 }
 
+void calcAccFunctions(uint8_t trackStatus, AccConfig* accConfig)
+{
+	for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
+	{
+		if(0 != accConfig[r].address)
+		{
+			switch(accConfig[r].trigMode)
+			{
+				case ACC_LS_RC:
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+					break;
+					
+				case ACC_LC_RS:
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+					break;
+
+				case ACC_LSTOG:
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
+					break;
+
+				case ACC_RSTOG:
+					if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
+					break;
+
+				default:
+					break;
+			}
+		}
+	}
+}
+
+
 /* Screen Layouts
 
 //  Main Screen
@@ -444,13 +512,7 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 	lcd_puts_p(key4Text);
 }
 
-#define TRACK_STATUS_SENSOR_LEFT      0x80
-#define TRACK_STATUS_SENSOR_RIGHT     0x40
-#define TRACK_STATUS_FAULTED          0x20
-#define TRACK_STATUS_SENSOR_MIDPNT    0x10
-#define TRACK_STATUS_SENSOR_INT_LEFT  0x08
-#define TRACK_STATUS_SENSOR_INT_RIGHT 0x04
-#define TRACK_STATUS_STOPPED          0x01
+
 
 
 
@@ -496,7 +558,8 @@ int main(void)
 	ScreenState screenState = SCREEN_MAIN_DRAW;
 	LocoConfig currentLoco, tmpLocoConfig;
 	OpsConfiguration opsConfig;
-	
+	AccConfig accConfig[NUM_ACC_OPTIONS];
+	AccConfig tmpAccConfig;
 	uint16_t endStopDelay = 0;
 	uint16_t backlightDelay = 0xFFFF;
 	uint8_t buttonLongPressCounters[4] = {3,3,3,3};
@@ -512,15 +575,25 @@ int main(void)
 	// Application initialization
 	init();
 	initDebounceState(&d, 0xFFFF); // Initialize all high since all inputs are active low
+
 	loadOpsConfiguration(&opsConfig);
 	opsConfig.stopped = true;
 	loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
+	for(uint8_t i = 0; i<NUM_ACC_OPTIONS; i++)
+		loadAccConfiguration(i, &accConfig[i]);
+
 	
 	if (opsConfig.dcMode)
 		dc_init();
 	else
+	{
 		dcc_init();
-	
+		for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
+		{
+			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode)
+				accPktQueuePush(accConfig[r].address, accConfig[r].startState);
+		}
+	}
 	drawSplashScreen();
 	wdt_reset();
 	loopCount = 0;
@@ -644,12 +717,14 @@ int main(void)
 						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
 						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+						calcAccFunctions(trackStatus, accConfig);
 						opState = STATE_REVDECEL;
 					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
 						fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
 						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
 						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+						calcAccFunctions(trackStatus, accConfig);
 						opState = STATE_REVDECEL;
 					}
 				}
@@ -672,6 +747,7 @@ int main(void)
 				{
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_FWDDECEL;
+					calcAccFunctions(trackStatus, accConfig);
 				} else if (opsConfig.intStopsEnable && (trackStatus & fwdIntSensorMask)) {
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_FWDINTDECEL;
@@ -685,6 +761,7 @@ int main(void)
 				{
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVDECEL;
+					calcAccFunctions(trackStatus, accConfig);
 				} else if (opsConfig.intStopsEnable && (trackStatus & revIntSensorMask)) {
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVINTDECEL;
@@ -1185,6 +1262,207 @@ int main(void)
 				break;
 
 
+			case SCREEN_CONF_ACCLIST_SETUP:
+				locoSlotOption = 0;
+				screenState = SCREEN_CONF_ACCLIST_DRAW;
+				break;
+
+
+// mmmm = LS-RC
+// mmmm = LC-RS
+// mmmm = LSTOG
+// mmmm = RSTOG
+
+
+//  00000000001111111111
+//  01234567890123456789
+// [ 00 0000 LS-RC S [S]]
+// [ 01 0001 LS-RC S [S]]
+// [ 02 0002 LS-RC S [S]]
+// [ +++  >>> NEXT CNCL ]
+
+
+
+			case SCREEN_CONF_ACCLIST_DRAW:
+				lcd_clrscr();
+				drawSoftKeys_p((locoSlotOption>0)?PSTR(" UP "):PSTR(""),  (locoSlotOption < NUM_ACC_OPTIONS-1)?PSTR("DOWN"):PSTR(""), PSTR("SLCT"), PSTR("BACK"));
+				{
+					uint8_t i, baseOptionCount = (locoSlotOption / 3) * 3;
+					for(i=0; i<3; i++)
+					{
+						uint8_t j = i+baseOptionCount;
+						
+						if (j >= NUM_ACC_OPTIONS)
+							continue;
+						if (j == locoSlotOption)
+						{
+							lcd_gotoxy(0, i);
+							lcd_putc('>');
+						} else {
+							lcd_gotoxy(0, i);
+							lcd_putc(' ');
+						}
+						
+						// Get accessory configuration details
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), 
+							"%02d %04d %5.5s %c [%c]", 
+							j, accConfig[j].address, getAccModeText(accConfig[j].trigMode), 
+							accConfig[j].startState?'S':'C', accConfig[j].currentState?'S':'C');
+						lcd_puts(screenLineBuffer);
+					}
+				}
+				screenState = SCREEN_CONF_ACCLIST_IDLE;
+				break;
+
+			case SCREEN_CONF_ACCLIST_IDLE:
+				// Switchy goodness
+				if ((SOFTKEY_1_LONG | SOFTKEY_1) & buttonsPressed)
+				{
+					if (locoSlotOption > 0)
+						locoSlotOption--;
+					screenState = SCREEN_CONF_ACCLIST_DRAW;
+				}
+				else if ((SOFTKEY_2_LONG | SOFTKEY_2) & buttonsPressed)
+				{
+					if (locoSlotOption < NUM_ACC_OPTIONS-1)
+						locoSlotOption++;
+					screenState = SCREEN_CONF_ACCLIST_DRAW;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					screenState = SCREEN_CONF_ACCCONF_SETUP;
+				}
+				
+				// Buttons handled, clear
+				buttonsPressed = 0;
+				break;
+
+
+//  00000000001111111111
+//  01234567890123456789
+// [ACC ADDR INIT TRIGR ]
+// [ nn xxxx nnn  qqqqq ]
+// [    ^               ]
+// [ +++  >>> NEXT CNCL ]
+
+
+			case SCREEN_CONF_ACCCONF_SETUP:
+				lcd_clrscr();
+				memcpy(&tmpAccConfig, &accConfig[locoSlotOption], sizeof(AccOperationMode));
+				
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "ACC ADDR INIT TRIGR");
+				lcd_puts(screenLineBuffer);
+
+				configSaveU8 = 4;
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
+				screenState = SCREEN_CONF_ACCCONF_DRAW;
+				break;
+				
+			case SCREEN_CONF_ACCCONF_DRAW:
+				lcd_gotoxy(0, 1);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d  %04d %3.3s  %5.5s", locoSlotOption, 
+					tmpAccConfig.address, tmpAccConfig.startState?"SET":"CLR", getAccModeText(tmpAccConfig.trigMode));
+				lcd_puts(screenLineBuffer);
+
+				blankCursorLine();
+				lcd_gotoxy(configSaveU8, 2);
+				switch(configSaveU8)
+				{
+					case 4:
+					case 5:
+					case 6:
+					case 7:
+						lcd_putc('^');
+						break;
+					
+					case 9:
+						lcd_puts("^^^");
+						break;
+					case 14:
+						lcd_puts("^^^^^");
+						break;
+				}
+				screenState = SCREEN_CONF_ACCCONF_IDLE;
+				break;
+
+			case SCREEN_CONF_ACCCONF_IDLE:
+				if ((SOFTKEY_1_LONG | SOFTKEY_1) & buttonsPressed)
+				{
+					switch(configSaveU8)
+					{
+						case 4:
+						case 5: // 100s addr
+						case 6: // 10s addr
+						case 7: // 1s addr
+							tmpAccConfig.address = deciIncrement(tmpAccConfig.address, 2044, 0, 7 - configSaveU8 );
+							break;
+
+						case 9:
+							tmpAccConfig.startState = !tmpAccConfig.startState;
+							break;
+
+						case 14: // 10s rate
+							tmpAccConfig.trigMode = (tmpAccConfig.trigMode+1) % ACC_MAX_OPS_MODES;
+							break;
+
+					}
+					screenState = SCREEN_CONF_ACCCONF_DRAW;
+				}
+				else if ((SOFTKEY_2_LONG | SOFTKEY_2) & buttonsPressed)
+				{
+					switch(configSaveU8)
+					{
+						case 4:
+						case 5:
+						case 6:
+							configSaveU8++;
+							break;
+
+						case 7:
+							configSaveU8 = 9;
+							break;
+						
+						case 9:
+							configSaveU8 = 14;
+							break;
+
+						case 14:
+							configSaveU8 = 4;
+							break;
+
+						default:
+							configSaveU8 = 4;
+							break;
+					}
+					screenState = SCREEN_CONF_ACCCONF_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					// Save this accessory option
+					saveAccConfiguration(locoSlotOption, &tmpAccConfig);
+					loadAccConfiguration(locoSlotOption, &accConfig[locoSlotOption]);
+					screenState = SCREEN_CONF_ACCLIST_DRAW;
+
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Cancel
+					lcd_clrscr();
+					screenState = SCREEN_CONF_ACCLIST_DRAW;
+				}
+
+				// Buttons handled, clear
+				buttonsPressed = 0;
+
+				break;
+
+
+
+
 //  Loco Configuration Screen 1
 //  00000000001111111111
 //  01234567890123456789
@@ -1230,7 +1508,7 @@ int main(void)
 				break;
 
 			case SCREEN_CONF_LOCOSLOT1_IDLE:
-				if (SOFTKEY_1 & buttonsPressed)
+				if ((SOFTKEY_1_LONG | SOFTKEY_1) & buttonsPressed)
 				{
 					switch(configSaveU8)
 					{
@@ -1270,7 +1548,7 @@ int main(void)
 					}
 					screenState = SCREEN_CONF_LOCOSLOT1_DRAW;
 				}
-				else if (SOFTKEY_2 & buttonsPressed)
+				else if ((SOFTKEY_2_LONG | SOFTKEY_2) & buttonsPressed)
 				{
 					switch(configSaveU8)
 					{
@@ -1778,13 +2056,13 @@ int main(void)
 				
 			case SCREEN_CONF_MENU_IDLE:
 				// Switchy goodness
-				if (SOFTKEY_1 & buttonsPressed)
+				if ((SOFTKEY_1_LONG | SOFTKEY_1) & buttonsPressed)
 				{
 					if (configMenuOption > 0)
 						configMenuOption--;
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
-				else if (SOFTKEY_2 & buttonsPressed)
+				else if ((SOFTKEY_2_LONG | SOFTKEY_2) & buttonsPressed)
 				{
 					if (configMenuOption < NUM_CONF_OPTIONS-1)
 						configMenuOption++;
@@ -1889,6 +2167,11 @@ int main(void)
 							dc_init();
 						} else {
 							dcc_init();
+							for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
+							{
+								if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode)
+									accPktQueuePush(accConfig[r].address, accConfig[r].startState);
+							}
 						}
 						saveOpsConfiguration(&opsConfig);
 					}

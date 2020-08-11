@@ -2,6 +2,7 @@
 #define _USERCONFIG_H_
 
 #define NUM_LOCO_OPTIONS 15
+#define NUM_ACC_OPTIONS  6
 
 typedef struct
 {
@@ -13,6 +14,25 @@ typedef struct
 	uint32_t revFunctions;
 	uint32_t allFunctions;
 } LocoConfig;
+
+typedef enum
+{
+	ACC_DISBL = 0,
+	ACC_LS_RC,
+	ACC_LC_RS,
+	ACC_LSTOG,
+	ACC_RSTOG,
+	ACC_MAX_OPS_MODES
+} AccOperationMode;
+
+typedef struct
+{
+	uint16_t address;
+	bool startState;
+	bool currentState;
+	AccOperationMode trigMode;
+} AccConfig;
+
 
 typedef struct
 {
@@ -45,6 +65,7 @@ typedef struct
 void loadOpsConfiguration(OpsConfiguration* opsConfig);
 void saveOpsConfiguration(OpsConfiguration* opsConfig);
 void firstTimeInitOpsConfiguration();
+
 
 // Locomotive configurations are stored at address 0x0040
 // Each has 32 bytes reserved for it
@@ -91,5 +112,23 @@ void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig);
 bool saveLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig);
 void firstTimeInitLocoConfiguration();
 void firstTimeInitConfig();
+
+#define EEP_ACCCONFIG_MEM_START_ADDR    (EEP_LOCOCONFIG_MEM_START_ADDR + EEP_LOCOCONFIG_BLOCK_SIZE * NUM_LOCO_OPTIONS)
+
+#define EEP_ACCCONFIG_ADDR_H_OFFSET     0x0000
+#define EEP_ACCCONFIG_ADDR_L_OFFSET     0x0001
+#define EEP_ACCCONFIG_MODE_OFFSET       0x0002
+#define EEP_ACCCONFIG_FLAGS1_OFFSET     0x0003
+
+#define ACCCONFIG_FLAGS1_START_SET      0x01
+
+#define EEP_ACCCONFIG_BLOCK_SIZE   8
+
+void firstTimeInitAccConfig();
+void loadAccConfiguration(uint8_t whichConfig, AccConfig* accConfig);
+void saveAccConfiguration(uint8_t whichConfig, AccConfig* accConfig);
+
+const char* getAccModeText(AccOperationMode mode);
+
 
 #endif
