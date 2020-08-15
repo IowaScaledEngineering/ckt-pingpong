@@ -20,15 +20,6 @@ LICENSE:
 
 *************************************************************************/
 
-
-
-
-// DCC packet format   10AAAAAA  0  1AAACDDD
-// Address AAAAAAAAADDD
-
-
-
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -540,7 +531,6 @@ typedef enum
 } OpState;
 
 
-
 int main(void)
 {
 	uint8_t buttonsPressed=0;
@@ -566,22 +556,25 @@ int main(void)
 	DebounceState d;
 	uint8_t fwdSensorMask = 0, revSensorMask = 0;
 	uint8_t fwdIntSensorMask = 0, revIntSensorMask = 0;
-	
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
 
 
-
+	// ***************************************************************************
 	// Application initialization
 	init();
 	initDebounceState(&d, 0xFFFF); // Initialize all high since all inputs are active low
 
 	loadOpsConfiguration(&opsConfig);
 	opsConfig.stopped = true;
+
 	loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
 	for(uint8_t i = 0; i<NUM_ACC_OPTIONS; i++)
 		loadAccConfiguration(i, &accConfig[i]);
 
+
+	// Initialize the output driver to either DC or DCC operation
+	// In the event of DCC, send the initial state of all accessories
 	
 	if (opsConfig.dcMode)
 		dc_init();
@@ -599,6 +592,9 @@ int main(void)
 	}
 	drawSplashScreen();
 	wdt_reset();
+
+
+
 	loopCount = 0;
 
 	opState = STATE_LEARN;
@@ -927,9 +923,8 @@ int main(void)
 			updateData = true;
 		}
 		
-
-		
 		// STEP 5 - Deal with the gigantic UI management state machine
+		// This really should be better
 		switch(screenState)
 		{
 			case SCREEN_MAIN_DRAW:
@@ -1085,8 +1080,6 @@ int main(void)
 				buttonsPressed = 0;
 				screenState = SCREEN_MAIN_IDLE;
 				break;
-
-
 
 			case SCREEN_MAIN_IDLE:
 				if(updateData)
