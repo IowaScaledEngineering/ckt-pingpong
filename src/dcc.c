@@ -84,27 +84,35 @@ uint8_t accPktQueuePopDCCPacket(AccChangeQueue* q, uint8_t* dccData, uint8_t dcc
 	uint8_t len = 0;
 	uint16_t addr = 0;
 	memset(dccData, 0, dccDataSz);
+	
 	if (0 == accPktQueueDepth(q))
 		return(0);
 
 	// Form accessory packet here
-	addr = q->pktBufferArray[q->headIdx].address;
-	dccData[0] = 0x80 | (0x3F & (addr >> 5));
-	dccData[1] = 0x80 | (0x70 ^ (0x70 & (addr<<2)));
-	dccData[1] |= (0x06 & (addr<<1));
-	if (q->pktBufferArray[q->headIdx].state)
-		dccData[1] |= 0x01;
+	addr = q->pktBufferArray[q->tailIdx].address;
 	
+	uint16_t nineBitAddr = ((addr+3) / 4);
+	uint8_t subAddr = (addr - (nineBitAddr*4) + 3);
+	
+	dccData[0] = 0x80 | (0x3F & (nineBitAddr));
+	
+	nineBitAddr = (nineBitAddr>>2); // Shift off the six LSBs we just used, and then shift up by four
+	nineBitAddr ^= 0x70; // Invert the remaining address bits
+	dccData[1] = 0x88 | (0x70 & nineBitAddr);
+	dccData[1] |= 0x06 & (subAddr<<1);
+	if (q->pktBufferArray[q->tailIdx].state)
+		dccData[1] |= 0x01;
+
 	len = 2;
 
 	// If count-- is zero, go ahead and pop it out
-	if (--q->pktBufferArray[q->tailIdx].count != 0)
-		return(len);
-
-	if( ++q->tailIdx >= q->pktBufferArraySz )
-		q->tailIdx = 0;
-	q->full = false;
-
+	if ((--q->pktBufferArray[q->tailIdx].count) == 0)
+	{
+		// Pop this one off, we're done with it
+		if( ++q->tailIdx >= q->pktBufferArraySz )
+			q->tailIdx = 0;
+		q->full = false;
+	}
 	return(len);
 }
 
@@ -255,13 +263,13 @@ void dcc_scheduler()
 		case 9:
 		case 11:
 			// If we have a accessory packet, send it here
-			nextDCCPacket.len = accPktQueuePopDCCPacket(&accq, (uint8_t*)nextDCCPacket.data, sizeof(nextDCCPacket.data));
-			if (0 == nextDCCPacket.len)
+			len = accPktQueuePopDCCPacket(&accq, (uint8_t*)nextDCCPacket.data, sizeof(nextDCCPacket.data));
+			if (0 == len)
 			{
 				// If we get zero len back, there's no acc packet to send, so just send idle
 				nextDCCPacket.data[0] = 0xFF;
 				nextDCCPacket.data[1] = 0x00;
-				nextDCCPacket.len = 2;
+				len = 2;
 			}
 			break;
 		

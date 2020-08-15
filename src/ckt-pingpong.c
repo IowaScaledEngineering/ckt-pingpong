@@ -591,7 +591,10 @@ int main(void)
 		for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
 		{
 			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode)
+			{
 				accPktQueuePush(accConfig[r].address, accConfig[r].startState);
+				accConfig[r].currentState = accConfig[r].startState;
+			}
 		}
 	}
 	drawSplashScreen();
@@ -1352,13 +1355,13 @@ int main(void)
 
 			case SCREEN_CONF_ACCCONF_SETUP:
 				lcd_clrscr();
-				memcpy(&tmpAccConfig, &accConfig[locoSlotOption], sizeof(AccOperationMode));
+				memcpy(&tmpAccConfig, &accConfig[locoSlotOption], sizeof(AccConfig));
 				
 				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "ACC ADDR INIT TRIGR");
 				lcd_puts(screenLineBuffer);
 
 				configSaveU8 = 4;
-				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), (0==locoSlotOption)?PSTR("SAVE"):PSTR("NEXT"), PSTR("CNCL"));
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
 				screenState = SCREEN_CONF_ACCCONF_DRAW;
 				break;
 				

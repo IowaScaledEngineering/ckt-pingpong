@@ -24,6 +24,8 @@ const char* getAccModeText(AccOperationMode mode)
 			return ("LSTOG");
 		case ACC_RSTOG:
 			return ("RSTOG");
+		default:
+			break;
 	}
 	return ("UNDEF");
 }
@@ -214,7 +216,7 @@ void saveAccConfiguration(uint8_t whichConfig, AccConfig* accConfig)
 	
 	if(accConfig->startState)
 		t |= ACCCONFIG_FLAGS1_START_SET;
-		
+
 	eeprom_write_byte((uint8_t*)EEP_ACCCONFIG_FLAGS1_OFFSET + offset, t);
 }
 
