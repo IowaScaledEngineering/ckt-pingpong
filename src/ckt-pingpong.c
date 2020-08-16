@@ -428,6 +428,12 @@ void calcAccFunctions(uint8_t trackStatus, AccConfig* accConfig)
 						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
 					break;
 
+				case ACC_XSTOG:
+					if (trackStatus & (TRACK_STATUS_SENSOR_RIGHT | TRACK_STATUS_SENSOR_LEFT))
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
+					break;
+
+
 				default:
 					break;
 			}
