@@ -654,7 +654,7 @@ footprint=crystal-4-smd
 T 61450 50850 5 10 1 1 0 3 1
 refdes=Y1
 T 62100 50600 5 10 1 1 0 1 1
-value=11.0592MHz
+value=12 MHz
 }
 C 61500 49900 1 0 0 gnd-1.sym
 C 61200 49900 1 0 0 gnd-1.sym
