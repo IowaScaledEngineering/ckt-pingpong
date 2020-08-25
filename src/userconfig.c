@@ -26,6 +26,13 @@ const char* getAccModeText(AccOperationMode mode)
 			return ("RSTOG");
 		case ACC_XSTOG:
 			return ("XSTOG");
+		case ACC_INIT:
+			return ("INIT ");
+/*
+		case ACC_REWST:
+			return ("REWST");
+		case ACC_LEWST:
+			return ("LEWST");*/
 
 		default:
 			break;

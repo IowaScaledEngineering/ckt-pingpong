@@ -23,6 +23,9 @@ typedef enum
 	ACC_LSTOG,
 	ACC_RSTOG,
 	ACC_XSTOG,
+	ACC_INIT,
+//	ACC_LEWST,
+//	ACC_REWST,
 	ACC_MAX_OPS_MODES
 } AccOperationMode;
 
