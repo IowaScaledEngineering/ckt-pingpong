@@ -58,6 +58,7 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 	opsConfig->dcMode = (flags1 & OPSCONFIG_FLAGS1_DC_MODE)?true:false;
 	opsConfig->intStopsEnable = (flags1 & OPSCONFIG_FLAGS1_INT_STOPS_EN)?true:false;
 	opsConfig->startPaused = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;
+	opsConfig->stopRetriggersLearnMode = (flags1 & OPSCONFIG_FLAGS1_STOP_RELEARN)?true:false;
 	
 	if(opsConfig->dcMode)
 		opsConfig->activeLocoConfig = 0;
@@ -99,7 +100,7 @@ void saveOpsConfiguration(OpsConfiguration* opsConfig)
 void firstTimeInitOpsConfiguration()
 {
 	// This should only be called if the application has decided to re-initialize configuration
-	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, 0);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, OPSCONFIG_FLAGS1_STOP_RELEARN);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, 1);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, 2);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, 0);

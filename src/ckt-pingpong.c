@@ -229,6 +229,10 @@ typedef enum
 	SCREEN_CONF_ACCCONF_SETUP  = 150,
 	SCREEN_CONF_ACCCONF_DRAW   = 151,
 	SCREEN_CONF_ACCCONF_IDLE   = 152,
+	
+	SCREEN_CONF_RELEARN_SETUP = 153,
+	SCREEN_CONF_RELEARN_DRAW = 154,
+	SCREEN_CONF_RELEARN_IDLE = 155,
 
 	SCREEN_CONF_BACKLITE_SETUP = 235,
 	SCREEN_CONF_BACKLITE_DRAW  = 236,
@@ -267,6 +271,7 @@ const ConfigurationOption configurationOptions[] =
   { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
   { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
   { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
+  { "Stop Relearn Dir",   SCREEN_CONF_RELEARN_SETUP },
   { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
   { "Turn off Backlight", SCREEN_CONF_BACKLITE_OFF },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
@@ -768,16 +773,16 @@ int main(void)
 					{
 						fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
-						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
-						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT; // These are backwards because the right sensor will hit first for intermediates
+						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
 						opState = STATE_FWDDECEL;
 						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 
 					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
 						fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
 						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
-						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
-						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT; // These are backwards because the left sensor will hit first for intermediates
+						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
 						opState = STATE_FWDDECEL;
 						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					}
@@ -786,15 +791,15 @@ int main(void)
 					{
 						fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
 						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
-						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
-						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
 						opState = STATE_REVDECEL;
 						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
 						fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
-						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
-						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
 						opState = STATE_REVDECEL;
 						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					}
@@ -1188,7 +1193,8 @@ int main(void)
 					if (opsConfig.stopped)
 					{
 						opsConfig.speed = 0;
-						opState = STATE_LEARN; // Put it back in learning mode
+						if (opsConfig.stopRetriggersLearnMode)
+							opState = STATE_LEARN; // Put it back in learning mode
 					}
 					
 					screenState = SCREEN_MAIN_REFRESH;
@@ -2319,7 +2325,55 @@ int main(void)
 				buttonsPressed = 0;	
 				break;
 
+//  00000000001111111111
+//  01234567890123456789
+// [Stop Relearns Dir:  ]
+// [[ ] Yes             ]
+// [[ ] No              ]
+// [ YES  NO  SAVE CNCL ]
 
+			case SCREEN_CONF_RELEARN_SETUP:
+				lcd_clrscr();
+				configSaveU8 = (opsConfig.stopRetriggersLearnMode)?1:0;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Stop Relearns Dir:"));
+				drawSoftKeys_p(PSTR("YES"),  PSTR(" NO "), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_RELEARN_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Yes"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] No"));
+				lcd_gotoxy(1, (configSaveU8)?1:2);
+				lcd_putc('*');
+				screenState = SCREEN_CONF_RELEARN_IDLE;
+				break;
+
+			case SCREEN_CONF_RELEARN_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8 = 1;
+					screenState = SCREEN_CONF_RELEARN_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8 = 0;
+					screenState = SCREEN_CONF_RELEARN_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.startPaused != (bool)configSaveU8))
+					{
+						opsConfig.stopRetriggersLearnMode = (bool)configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
 
 
 

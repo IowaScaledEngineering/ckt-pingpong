@@ -49,7 +49,8 @@ typedef struct
 	bool intStopsEnable;
 	uint8_t activeLocoConfig;
 	bool startPaused;
-	
+	bool stopRetriggersLearnMode;
+
 	// Runtime elements
 	bool stopped;
 	int16_t speed;
@@ -69,6 +70,7 @@ typedef struct
 #define OPSCONFIG_FLAGS1_DC_MODE      0x01
 #define OPSCONFIG_FLAGS1_INIT_STOP    0x02
 #define OPSCONFIG_FLAGS1_INT_STOPS_EN 0x04
+#define OPSCONFIG_FLAGS1_STOP_RELEARN 0x08
 
 void loadOpsConfiguration(OpsConfiguration* opsConfig);
 void saveOpsConfiguration(OpsConfiguration* opsConfig);
