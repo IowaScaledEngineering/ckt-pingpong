@@ -304,7 +304,7 @@ void lcd_backlightOff()
 
 #define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
 #define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
-#define INT_SENSOR_INPUT_MASK (_BV(PC0) | _BV(PC1))
+#define INT_SENSOR_INPUT_MASK (_BV(PC6) | _BV(PC7))
 
 #define SOFTKEY_1      0x01
 #define SOFTKEY_2      0x02
@@ -338,7 +338,7 @@ void initializeSwitches(void)
 
 uint16_t readSwitches()
 {
-	uint16_t sensors = (uint16_t)(PIND & SENSOR_INPUT_MASK) | (((uint16_t)(PINC & INT_SENSOR_INPUT_MASK))<<8);
+	uint16_t sensors = (uint16_t)(PIND & SENSOR_INPUT_MASK) | (((uint16_t)(PINC & INT_SENSOR_INPUT_MASK))<<2);
 	uint8_t switches = ((PINC & PANEL_SWITCH_MASK)>>2);
 
 	uint8_t fault = (PIND & _BV(PD2))?0x20:0x00;
@@ -1811,10 +1811,7 @@ int main(void)
 			case SCREEN_CONF_BACKLITE_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				if (0 == configSaveU8_2)
-					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "None");
-				else
-					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
