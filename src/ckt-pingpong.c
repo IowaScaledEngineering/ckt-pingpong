@@ -215,6 +215,7 @@ typedef enum
 	SCREEN_CONF_BACKLITE_SETUP = 235,
 	SCREEN_CONF_BACKLITE_DRAW  = 236,
 	SCREEN_CONF_BACKLITE_IDLE  = 237,
+	SCREEN_CONF_BACKLITE_OFF   = 238,
 
 	SCREEN_CONF_MANUAL_SETUP = 240,
 	SCREEN_CONF_MANUAL_DRAW  = 241,
@@ -249,6 +250,7 @@ const ConfigurationOption configurationOptions[] =
   { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
   { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
   { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
+  { "Turn off Backlight", SCREEN_CONF_BACKLITE_OFF },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
   { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
 };
@@ -562,6 +564,8 @@ int main(void)
 	DebounceState d;
 	uint8_t fwdSensorMask = 0, revSensorMask = 0;
 	uint8_t fwdIntSensorMask = 0, revIntSensorMask = 0;
+	bool forceBacklightOff = false;
+
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
 
@@ -645,11 +649,12 @@ int main(void)
 			// If any button is pressed, reset backlight delay
 			if (buttonsPressed)
 			{
-				if (0 == backlightDelay && opsConfig.backlightTimeout != 0)
+				if ((0 == backlightDelay && opsConfig.backlightTimeout != 0) || forceBacklightOff)
 				{
 					// If we're timed out and the backlight is off, eat the first
 					// keystroke
 					buttonsPressed &= 0xF0;
+					forceBacklightOff = false;
 					lcd_backlightOn();
 				}
 				backlightDelay = opsConfig.backlightTimeout * 10;
@@ -856,15 +861,16 @@ int main(void)
 			if (endStopDelay > 0)
 				endStopDelay--;
 
-
 			if (0 == opsConfig.backlightTimeout)
-				lcd_backlightOn();
-			else if (backlightDelay != 0)
-			{
-				backlightDelay--;
-				lcd_backlightOn();
-			} else {
+				backlightDelay = 255;  // Never let the backlight time out if configured to never sleep
+
+			if (forceBacklightOff || 0 == backlightDelay )
 				lcd_backlightOff();
+			else
+			{
+				if (backlightDelay > 0)
+					backlightDelay--;
+				lcd_backlightOn();
 			}
 
 			// Time to re-evaluate speed
@@ -1868,7 +1874,13 @@ int main(void)
 				buttonsPressed = 0;
 				break;
 
-
+			case SCREEN_CONF_BACKLITE_OFF:
+				buttonsPressed = 0;
+				// Turn backlight off
+				forceBacklightOff = true;
+				// Go back to main screen
+				screenState = SCREEN_MAIN_DRAW;
+				break;
 
 //  Loco Configuration Screen 2
 //  00000000001111111111
@@ -2370,7 +2382,7 @@ int main(void)
 //  01234567890123456789
 // [V:vv.vV FDC 00000l/s]
 // [A:vv.v B:vv.v I:a.aa]
-// [S:L-(L)/R-(L) ... nn]
+// [Git:XXXXXX Ver:x.y  ]
 // [PHSA PHSB      BACK ]
 // F:n - n=Y/N for faulted
 
@@ -2384,10 +2396,7 @@ int main(void)
 				configSaveU8 = decisecs;
 				{
 					const char* outMode = "DCC";
-					char opStateStr[4];
-					char leftSensorAssignment = '?';
-					char rightSensorAssignment = '?';
-					
+				
 					if (opsConfig.dcMode)
 						outMode = "*DC";
 					if (trackStatus & TRACK_STATUS_FAULTED)
@@ -2402,20 +2411,8 @@ int main(void)
 					lcd_puts(screenLineBuffer);
 
 					lcd_gotoxy(0,2);
-					if (TRACK_STATUS_SENSOR_LEFT == fwdSensorMask)
-						leftSensorAssignment = 'F';
-					else if (TRACK_STATUS_SENSOR_LEFT == revSensorMask)
-						leftSensorAssignment = 'R';
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "Git:%06lX Ver:%d.%d", GIT_REV, SWREV_MAJOR, SWREV_MINOR);
 
-					if (TRACK_STATUS_SENSOR_RIGHT == fwdSensorMask)
-						rightSensorAssignment = 'F';
-					else if (TRACK_STATUS_SENSOR_RIGHT == revSensorMask)
-						rightSensorAssignment = 'R';
-
-
-
-					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "S:L%c(%c)/R%c(%c) %s %02d", (trackStatus & TRACK_STATUS_SENSOR_LEFT)?'*':'-', 
-						leftSensorAssignment, (trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'*':'-', rightSensorAssignment, opStateStr, endStopDelay/10);
 					lcd_puts(screenLineBuffer);
 				}
 				screenState = SCREEN_CONF_DIAG_IDLE;
