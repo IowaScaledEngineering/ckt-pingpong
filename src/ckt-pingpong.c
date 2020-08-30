@@ -42,6 +42,24 @@ LICENSE:
 #include "userconfig.h"
 #include "increment.h"
 
+typedef enum
+{
+	STATE_LEARN = 0,
+	STATE_FTOR_WAIT,
+	STATE_RTOF_WAIT,
+	STATE_REVERSE,
+	STATE_FORWARD,
+	STATE_REVDECEL,
+	STATE_FWDDECEL,
+	STATE_REVINTDECEL,
+	STATE_FWDINTDECEL,
+	STATE_REVINTWAIT,
+	STATE_FWDINTWAIT,
+	STATE_REVINTACCEL,
+	STATE_FWDINTACCEL,
+
+} OpState;
+
 
 // ******** Start 100 Hz Timer - Very Accurate Version
 
@@ -398,47 +416,103 @@ void drawSplashScreen()
 	lcd_clrscr();
 }
 
-void calcAccFunctions(uint8_t trackStatus, AccConfig* accConfig)
+void calcIntermediateAccFunctions(uint8_t trackStatus, AccConfig* accConfig, OpState opState)
 {
 	for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
 	{
-		if(0 != accConfig[r].address)
+		if(0 == accConfig[r].address)
+			continue;
+			
+		// Only do the intermediate functions
+		switch(accConfig[r].trigMode)
 		{
-			switch(accConfig[r].trigMode)
-			{
-				case ACC_LS_RC:
-					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
-					break;
-					
-				case ACC_LC_RS:
-					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
-					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-					break;
+			case ACC_LI_ST:
+				if ((opState == STATE_FWDINTDECEL || opState == STATE_REVINTDECEL) && (trackStatus & TRACK_STATUS_SENSOR_INT_LEFT))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if ((opState == STATE_FWDINTACCEL || opState == STATE_REVINTACCEL) && true == accConfig[r].currentState)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				break;
+				
+			case ACC_RI_ST:
+				if ((opState == STATE_FWDINTDECEL || opState == STATE_REVINTDECEL) && (trackStatus & TRACK_STATUS_SENSOR_INT_RIGHT))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if ((opState == STATE_FWDINTACCEL || opState == STATE_REVINTACCEL) && true == accConfig[r].currentState)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				break;
+				
+			case ACC_XI_ST:
+				if ((opState == STATE_FWDINTDECEL || opState == STATE_REVINTDECEL) && (trackStatus & (TRACK_STATUS_SENSOR_INT_RIGHT | TRACK_STATUS_SENSOR_INT_LEFT)))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if ((opState == STATE_FWDINTACCEL || opState == STATE_REVINTACCEL) && true == accConfig[r].currentState)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				break;
+			default: // Don't do anything
+				break; 
+		}
+	}
+}
 
-				case ACC_LSTOG:
-					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
-					break;
+void calcEndpointAccFunctions(uint8_t trackStatus, AccConfig* accConfig, OpState opState)
+{
+	for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
+	{
+		if(0 == accConfig[r].address)
+			continue;
 
-				case ACC_RSTOG:
-					if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
-					break;
+		switch(accConfig[r].trigMode)
+		{
+			case ACC_LS_RC:
+				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				break;
+				
+			case ACC_LC_RS:
+				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				break;
 
-				case ACC_XSTOG:
-					if (trackStatus & (TRACK_STATUS_SENSOR_RIGHT | TRACK_STATUS_SENSOR_LEFT))
-						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
-					break;
+			case ACC_LSTOG:
+				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
+				break;
+
+			case ACC_RSTOG:
+				if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
+				break;
+
+			case ACC_XSTOG:
+				if (trackStatus & (TRACK_STATUS_SENSOR_RIGHT | TRACK_STATUS_SENSOR_LEFT))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
+				break;
+
+			case ACC_LE_ST: // this should set when entering the left end, clear when departing
+				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				break;
+			case ACC_RE_ST:
+				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_RIGHT))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+			case ACC_XE_ST:
+				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & (TRACK_STATUS_SENSOR_LEFT | TRACK_STATUS_SENSOR_RIGHT)))
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				break;
 
 
-				default:
-					break;
-			}
+			case ACC_INIT: // Only sets initially
+			case ACC_DISBL: // Does nothing
+			default:
+				break;
 		}
 	}
 }
@@ -520,23 +594,7 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 #define ANALOG_CHANNEL_INPUT_VOLTS    2
 #define ANALOG_CHANNEL_TRACK_CURRENT  3
 
-typedef enum
-{
-	STATE_LEARN = 0,
-	STATE_FTOR_WAIT,
-	STATE_RTOF_WAIT,
-	STATE_REVERSE,
-	STATE_FORWARD,
-	STATE_REVDECEL,
-	STATE_FWDDECEL,
-	STATE_REVINTDECEL,
-	STATE_FWDINTDECEL,
-	STATE_REVINTWAIT,
-	STATE_FWDINTWAIT,
-	STATE_REVINTACCEL,
-	STATE_FWDINTACCEL,
 
-} OpState;
 
 
 int main(void)
@@ -713,12 +771,15 @@ int main(void)
 						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
 						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
 						opState = STATE_FWDDECEL;
+						calcEndpointAccFunctions(trackStatus, accConfig, opState);
+
 					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
 						fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
 						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
 						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
 						opState = STATE_FWDDECEL;
+						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					}
 				} else if (opsConfig.speed < 0) {
 					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
@@ -727,29 +788,35 @@ int main(void)
 						revSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
 						revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
-						calcAccFunctions(trackStatus, accConfig);
 						opState = STATE_REVDECEL;
+						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					} else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT) {
 						fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
 						revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
 						fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
 						revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
-						calcAccFunctions(trackStatus, accConfig);
 						opState = STATE_REVDECEL;
+						calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					}
 				}
 				break;
 				
 			case STATE_FTOR_WAIT:
 				opsConfig.requestedSpeed = 0;
-				if (0 == endStopDelay)    
+				if (0 == endStopDelay)
+				{
+					calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					opState = STATE_REVERSE;
+				}
 				break;
 			
 			case STATE_RTOF_WAIT:
 				opsConfig.requestedSpeed = 0;
-				if (0 == endStopDelay)    
+				if (0 == endStopDelay)
+				{
+					calcEndpointAccFunctions(trackStatus, accConfig, opState);
 					opState = STATE_FORWARD;
+				}
 				break;
 			
 			case STATE_FORWARD:
@@ -757,10 +824,11 @@ int main(void)
 				{
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_FWDDECEL;
-					calcAccFunctions(trackStatus, accConfig);
+					calcEndpointAccFunctions(trackStatus, accConfig, opState);
 				} else if (opsConfig.intStopsEnable && (trackStatus & fwdIntSensorMask)) {
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_FWDINTDECEL;
+					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 				} else {
 					opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed*100;
 				}
@@ -771,10 +839,11 @@ int main(void)
 				{
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVDECEL;
-					calcAccFunctions(trackStatus, accConfig);
+					calcEndpointAccFunctions(trackStatus, accConfig, opState);
 				} else if (opsConfig.intStopsEnable && (trackStatus & revIntSensorMask)) {
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVINTDECEL;
+					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 				} else {
 					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
 				}
@@ -810,7 +879,10 @@ int main(void)
 			case STATE_REVINTACCEL:
 				opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
 				if (!(trackStatus & revIntSensorMask))
+				{
+					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 					opState = STATE_REVERSE;
+				}
 				break;
 
 			case STATE_FWDDECEL:
@@ -843,7 +915,10 @@ int main(void)
 			case STATE_FWDINTACCEL:
 				opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed*100;
 				if (!(trackStatus & fwdIntSensorMask))
+				{
+					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 					opState = STATE_FORWARD;
+				}
 				break;
 
 			default:
