@@ -271,9 +271,9 @@ const ConfigurationOption configurationOptions[] =
   { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
   { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
   { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
-  { "Stop Relearn Dir",   SCREEN_CONF_RELEARN_SETUP },
+  { "Stop Relearns Dir",   SCREEN_CONF_RELEARN_SETUP },
   { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
-  { "Turn off Backlight", SCREEN_CONF_BACKLITE_OFF },  
+  { "Turn Off Backlight", SCREEN_CONF_BACKLITE_OFF },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
   { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
 };
@@ -2179,7 +2179,7 @@ int main(void)
 				lcd_clrscr();
 				configSaveU8 = (opsConfig.intStopsEnable)?1:0;
 				lcd_gotoxy(0,0);
-				lcd_puts("Intermediate Stops");
+				lcd_puts("Midpoint Stops");
 				drawSoftKeys_p(PSTR("ENBL"),  PSTR("DSBL"), PSTR("SAVE"), PSTR("CNCL"));
 				// Intentional fall-through
 
