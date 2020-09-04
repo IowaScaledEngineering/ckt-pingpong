@@ -399,13 +399,16 @@ void init(void)
 
 void drawSplashScreen()
 {
+	char buffer[24];
 	lcd_setup_bigdigits();
 	lcd_gotoxy(0,0);
 	//               00000000001111111111
 	//               01234567890123456789
 	//                        ||
 	lcd_gotoxy(0,0);
-	lcd_puts_p(PSTR(" The Motorman  v1.0 "));
+	memset(buffer, 0, sizeof(buffer));
+	sprintf(buffer, " The Motorman  v%d.%d", SWREV_MAJOR, SWREV_MINOR);
+	lcd_puts(buffer);
 	lcd_gotoxy(0,1);
 	lcd_puts_p(PSTR(" Shuttle Controller "));
 	lcd_gotoxy(0,2);
