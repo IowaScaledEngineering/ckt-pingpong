@@ -399,13 +399,16 @@ void init(void)
 
 void drawSplashScreen()
 {
+	char buffer[24];
 	lcd_setup_bigdigits();
 	lcd_gotoxy(0,0);
 	//               00000000001111111111
 	//               01234567890123456789
 	//                        ||
 	lcd_gotoxy(0,0);
-	lcd_puts_p(PSTR(" The Motorman  v1.0 "));
+	memset(buffer, 0, sizeof(buffer));
+	sprintf(buffer, " The Motorman  v%d.%d", SWREV_MAJOR, SWREV_MINOR);
+	lcd_puts(buffer);
 	lcd_gotoxy(0,1);
 	lcd_puts_p(PSTR(" Shuttle Controller "));
 	lcd_gotoxy(0,2);
@@ -1883,61 +1886,43 @@ int main(void)
 				lcd_puts_p(PSTR("Backlight Timeout"));
 				lcd_gotoxy(1, 1);
 				lcd_puts_p(PSTR("Seconds: "));
-				configSaveU8 = 10;
-				configSaveU8_2 = opsConfig.backlightTimeout;
-				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
+				lcd_gotoxy(10, 2);
+				lcd_puts("^^^^");
+				configSaveU8_2 = (opsConfig.backlightTimeout / 10) * 10;
+
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" -- "), PSTR("SAVE"), PSTR("CNCL"));
 				screenState = SCREEN_CONF_BACKLITE_DRAW;
 				break;
 
 			case SCREEN_CONF_BACKLITE_DRAW:
-				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				if (0 == configSaveU8_2)
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "None");
+				else
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
 				lcd_puts(screenLineBuffer);
-				lcd_gotoxy(configSaveU8, 2);
-				lcd_putc('^');
 				screenState = SCREEN_CONF_BACKLITE_IDLE;
 				break;
 
 			case SCREEN_CONF_BACKLITE_IDLE:
 				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
 				{
-					switch(configSaveU8)
-					{
-						case 10:
-						case 11:
-						case 12:
-							configSaveU8_2 = deciIncrement(configSaveU8_2, 255, 0, 12 - configSaveU8);
-							break;
-
-						default:
-							configSaveU8 = 10;
-							break;
-					}
+					if (configSaveU8_2 < 250)
+						configSaveU8_2 += 10;
 					screenState = SCREEN_CONF_BACKLITE_DRAW;
 				}
 				else if ((SOFTKEY_2 | SOFTKEY_2_LONG) & buttonsPressed)
 				{
-					switch(configSaveU8)
-					{
-						case 10:
-						case 11:
-							configSaveU8++;
-							break;
-						case 12:
-							configSaveU8 = 10;
-							break;
-
-						default:
-							configSaveU8 = 10;
-							break;
-					}
+					if (configSaveU8_2 > 0)
+						configSaveU8_2 -= 10;
 					screenState = SCREEN_CONF_BACKLITE_DRAW;
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
 					opsConfig.backlightTimeout = configSaveU8_2;
+					forceBacklightOff = false;
+					backlightDelay = opsConfig.backlightTimeout * 10;
 					saveOpsConfiguration(&opsConfig);
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
@@ -2508,7 +2493,7 @@ int main(void)
 //  01234567890123456789
 // [V:vv.vV FDC 00000l/s]
 // [A:vv.v B:vv.v I:a.aa]
-// [Git:XXXXXX Ver:x.y  ]
+// [XXXXXX vx.y LR IR IL]
 // [PHSA PHSB      BACK ]
 // F:n - n=Y/N for faulted
 
@@ -2537,7 +2522,9 @@ int main(void)
 					lcd_puts(screenLineBuffer);
 
 					lcd_gotoxy(0,2);
-					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "Git:%06lX Ver:%d.%d", GIT_REV, SWREV_MAJOR, SWREV_MINOR);
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%06lX v%d.%d %c%c %s %s", GIT_REV, SWREV_MAJOR, SWREV_MINOR, 
+						(trackStatus & TRACK_STATUS_SENSOR_LEFT)?'L':'-', (trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'R':'-', 
+						(trackStatus & TRACK_STATUS_SENSOR_INT_LEFT)?"IL":"--", (trackStatus & TRACK_STATUS_SENSOR_INT_RIGHT)?"IR":"--");
 
 					lcd_puts(screenLineBuffer);
 				}
