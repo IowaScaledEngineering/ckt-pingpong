@@ -198,9 +198,13 @@ typedef enum
 	SCREEN_CONF_LOCOSLOT1_DRAW  = 111,
 	SCREEN_CONF_LOCOSLOT1_IDLE  = 112,
 
-	SCREEN_CONF_LOCOSLOT2_SETUP = 115,
-	SCREEN_CONF_LOCOSLOT2_DRAW  = 116,
-	SCREEN_CONF_LOCOSLOT2_IDLE  = 117,
+	SCREEN_CONF_LOCOSLOT2_SETUP = 113,
+	SCREEN_CONF_LOCOSLOT2_DRAW  = 114,
+	SCREEN_CONF_LOCOSLOT2_IDLE  = 115,
+
+	SCREEN_CONF_LOCOSLOT3_SETUP = 116,
+	SCREEN_CONF_LOCOSLOT3_DRAW  = 117,
+	SCREEN_CONF_LOCOSLOT3_IDLE  = 118,
 
 	SCREEN_LOAD_CONF_SETUP = 120,
 	SCREEN_LOAD_CONF_DRAW = 121,
@@ -1871,7 +1875,160 @@ int main(void)
 
 				break;
 
-//  Loco Configuration Screen 2
+
+//  Loco Configuration Screen 3
+//  00000000001111111111
+//  01234567890123456789
+// [nn   ACC DEC        ]
+// [     Fnn Fnn        ]
+// [     ^              ]
+// [ +++  >>> SAVE CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+
+			case SCREEN_CONF_LOCOSLOT3_SETUP:
+				lcd_clrscr();
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC DEC        ", locoSlotOption);
+				lcd_puts(screenLineBuffer);
+				configSaveU8 = 0;
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
+				{
+					uint8_t i;
+					for(i=0; i<5; i++)
+						configSaveFuncs[i] = 29; // Set all functions to 29 - which is unset
+
+					for(i=0; i<=28; i++)
+					{
+						if (tmpLocoConfig.allFunctions & ((uint32_t)1UL<<i))
+						{
+							configSaveFuncs[0] = i;
+							break;
+						}
+					}
+
+					for(i=0; i<=28; i++)
+					{
+						if (tmpLocoConfig.accFunctions & ((uint32_t)1UL<<i))
+						{
+							configSaveFuncs[1] = i;
+							break;
+						}
+					}
+					for(i++; i<=28; i++)
+					{
+						if (tmpLocoConfig.decFunctions & ((uint32_t)1UL<<i))
+						{
+							configSaveFuncs[2] = i;
+							break;
+						}
+					}
+					
+				}
+				screenState = SCREEN_CONF_LOCOSLOT3_DRAW;
+				
+				break;
+
+			case SCREEN_CONF_LOCOSLOT3_DRAW:
+				blankCursorLine();
+				for(uint8_t i=0; i<5; i++)
+				{
+					if (configSaveFuncs[i] >= 29)
+						strncpy(screenLineBuffer, "F--", sizeof(screenLineBuffer));
+					else
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), "F%02d", configSaveFuncs[i]);
+					switch(i)
+					{
+						case 0:
+							lcd_gotoxy(1, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(2, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 1:
+							lcd_gotoxy(5, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(6, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 2:
+							lcd_gotoxy(9, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(10, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 3:
+							lcd_gotoxy(13, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(14, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 4:
+							lcd_gotoxy(17, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(18, 2);
+								lcd_puts("^^");
+							}
+							break;
+					}
+				}
+				screenState = SCREEN_CONF_LOCOSLOT3_IDLE;
+				break;
+
+			case SCREEN_CONF_LOCOSLOT3_IDLE:
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
+				{
+					configSaveFuncs[configSaveU8] = (configSaveFuncs[configSaveU8] + 1) % 30;
+					screenState = SCREEN_CONF_LOCOSLOT3_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 5)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_LOCOSLOT3_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					// Put the functions back in their bitmasks
+					tmpLocoConfig.allFunctions = ((uint32_t)1UL<<configSaveFuncs[0]);
+					tmpLocoConfig.fwdFunctions = ((uint32_t)1UL<<configSaveFuncs[1]) | ((uint32_t)1UL<<configSaveFuncs[2]);
+					tmpLocoConfig.revFunctions = ((uint32_t)1UL<<configSaveFuncs[3]) | ((uint32_t)1UL<<configSaveFuncs[4]);
+					saveLocoConfiguration(locoSlotOption, &tmpLocoConfig);
+					screenState = SCREEN_CONF_LOCOLIST_SETUP;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Cancel
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+
+				// Buttons handled, clear
+				buttonsPressed = 0;
+
+				break;
+
+
+
+
+//  Backlight Timeout Configuration
 //  00000000001111111111
 //  01234567890123456789
 // [Backlight Timeout   ]

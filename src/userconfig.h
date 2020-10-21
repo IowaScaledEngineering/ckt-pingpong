@@ -12,6 +12,8 @@ typedef struct
 	uint8_t rampRate;
 	uint32_t fwdFunctions;
 	uint32_t revFunctions;
+	uint32_t accFunctions;
+	uint32_t decFunctions;
 	uint32_t allFunctions;
 } LocoConfig;
 
