@@ -985,7 +985,7 @@ int main(void)
 			{
 				uint32_t accDecFunctions = 0;
 				if (opState == STATE_REVDECEL || opState == STATE_REVINTDECEL || opState == STATE_REVINTWAIT || opState == STATE_RTOF_WAIT
-					|| opState == STATE_FWDDECEL || opState == STATE_FWDINTDECEL || opState == STATE_FWDINTWAIT || opState == STATE_FTOR_WAIT)
+					|| opState == STATE_FWDDECEL || opState == STATE_FWDINTDECEL || opState == STATE_FWDINTWAIT || opState == STATE_FTOR_WAIT || opsConfig.stopped)
 				{
 					// If we're in a known deceleration or stopping mode, activate decelerate functions (like brake)
 					accDecFunctions = currentLoco.decFunctions;
