@@ -997,7 +997,7 @@ int main(void)
 				
 				dcc_setSpeedAndDir(currentLoco.address, currentLoco.shortDCCAddress, 
 					abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1,
-					currentLoco.allFunctions | accDecFunctions | ((opsConfig.speed >= 0)?currentLoco.revFunctions:currentLoco.fwdFunctions));
+					currentLoco.allFunctions | accDecFunctions | ((opsConfig.speed >= 0)?currentLoco.fwdFunctions:currentLoco.revFunctions));
 			}
 		}
 
