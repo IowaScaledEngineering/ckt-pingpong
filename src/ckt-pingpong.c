@@ -1890,7 +1890,7 @@ int main(void)
 //  Loco Configuration Screen 3
 //  00000000001111111111
 //  01234567890123456789
-// [nn   ACC DEC        ]
+// [nn   ACC BRK        ]
 // [     Fnn Fnn        ]
 // [     ^              ]
 // [ +++  >>> SAVE CNCL ]
@@ -1898,7 +1898,7 @@ int main(void)
 
 			case SCREEN_CONF_LOCOSLOT3_SETUP:
 				lcd_clrscr();
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC DEC        ", locoSlotOption);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC BRK        ", locoSlotOption);
 				lcd_puts(screenLineBuffer);
 				configSaveU8 = 0;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
@@ -2537,8 +2537,10 @@ int main(void)
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
-					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
-					opState = STATE_LEARN;
+					if (opsConfig.requestedSpeed > 0)
+						opState = STATE_FWDDECEL;
+					else
+						opState = STATE_REVDECEL;
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if (SOFTKEY_4 & buttonsPressed)
