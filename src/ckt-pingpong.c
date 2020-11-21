@@ -99,7 +99,7 @@ void initDebounceState(DebounceState* d, uint16_t initialState)
 	d->debounced_state = initialState;
 }
 
-uint8_t debounce(uint16_t raw_inputs, DebounceState* d)
+uint16_t debounce(uint16_t raw_inputs, DebounceState* d)
 {
 	uint16_t delta = raw_inputs ^ d->debounced_state;   //Find all of the changes
 	uint16_t changes;
