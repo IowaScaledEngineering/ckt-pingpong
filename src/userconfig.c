@@ -6,6 +6,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
+#include <avr/wdt.h>
 #include "userconfig.h"
 #include "macros.h"
 
@@ -207,6 +208,7 @@ void firstTimeInitLocoConfiguration()
 	for(uint8_t i=0; i<NUM_LOCO_OPTIONS; i++)
 	{
 		memset(&l, 0, sizeof(LocoConfig));
+		wdt_reset();
 		if (0 == i)
 		{
 			// DC configuration
@@ -283,12 +285,14 @@ void firstTimeInitAccConfig()
 	acc.trigMode = ACC_DISBL;
 	for(uint8_t i=0; i<NUM_ACC_OPTIONS; i++)
 	{
+		wdt_reset();
 		saveAccConfiguration(i, &acc);
 	}
 }
 
 void firstTimeInitConfig()
 {
+	wdt_reset();
 	firstTimeInitOpsConfiguration();
 	firstTimeInitLocoConfiguration();
 	firstTimeInitAccConfig();
