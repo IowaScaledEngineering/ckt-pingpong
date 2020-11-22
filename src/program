@@ -1,0 +1,9 @@
+#!/bin/bash
+
+espeak "Programming"
+make fuse firmware HEX=hex/ckt-pingpong-v1.0.hex
+
+if [ $? -eq 0 ]
+then espeak "Complete"
+else espeak "Failed"
+fi
