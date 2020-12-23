@@ -99,7 +99,7 @@ void initDebounceState(DebounceState* d, uint16_t initialState)
 	d->debounced_state = initialState;
 }
 
-uint8_t debounce(uint16_t raw_inputs, DebounceState* d)
+uint16_t debounce(uint16_t raw_inputs, DebounceState* d)
 {
 	uint16_t delta = raw_inputs ^ d->debounced_state;   //Find all of the changes
 	uint16_t changes;
@@ -198,9 +198,13 @@ typedef enum
 	SCREEN_CONF_LOCOSLOT1_DRAW  = 111,
 	SCREEN_CONF_LOCOSLOT1_IDLE  = 112,
 
-	SCREEN_CONF_LOCOSLOT2_SETUP = 115,
-	SCREEN_CONF_LOCOSLOT2_DRAW  = 116,
-	SCREEN_CONF_LOCOSLOT2_IDLE  = 117,
+	SCREEN_CONF_LOCOSLOT2_SETUP = 113,
+	SCREEN_CONF_LOCOSLOT2_DRAW  = 114,
+	SCREEN_CONF_LOCOSLOT2_IDLE  = 115,
+
+	SCREEN_CONF_LOCOSLOT3_SETUP = 116,
+	SCREEN_CONF_LOCOSLOT3_DRAW  = 117,
+	SCREEN_CONF_LOCOSLOT3_IDLE  = 118,
 
 	SCREEN_LOAD_CONF_SETUP = 120,
 	SCREEN_LOAD_CONF_DRAW = 121,
@@ -979,9 +983,21 @@ int main(void)
 				dc_setSpeedAndDir(abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1);
 			else
 			{
+				uint32_t accDecFunctions = 0;
+				if (opState == STATE_REVDECEL || opState == STATE_REVINTDECEL || opState == STATE_REVINTWAIT || opState == STATE_RTOF_WAIT
+					|| opState == STATE_FWDDECEL || opState == STATE_FWDINTDECEL || opState == STATE_FWDINTWAIT || opState == STATE_FTOR_WAIT || opsConfig.stopped)
+				{
+					// If we're in a known deceleration or stopping mode, activate decelerate functions (like brake)
+					accDecFunctions = currentLoco.decFunctions;
+				} else if (opsConfig.requestedSpeed != opsConfig.speed) {
+					// If we're in any other mode and requested speed != speed, assume accel and set functions
+					accDecFunctions = currentLoco.accFunctions;
+				}
+				
+				
 				dcc_setSpeedAndDir(currentLoco.address, currentLoco.shortDCCAddress, 
 					abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1,
-					currentLoco.allFunctions | ((opsConfig.speed >= 0)?currentLoco.revFunctions:currentLoco.fwdFunctions));
+					currentLoco.allFunctions | accDecFunctions | ((opsConfig.speed >= 0)?currentLoco.fwdFunctions:currentLoco.revFunctions));
 			}
 		}
 
@@ -1719,7 +1735,7 @@ int main(void)
 				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   FWD FWD REV REV", locoSlotOption);
 				lcd_puts(screenLineBuffer);
 				configSaveU8 = 0;
-				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("NEXT"), PSTR("CNCL"));
 				{
 					uint8_t i;
 					for(i=0; i<5; i++)
@@ -1856,7 +1872,121 @@ int main(void)
 					tmpLocoConfig.allFunctions = ((uint32_t)1UL<<configSaveFuncs[0]);
 					tmpLocoConfig.fwdFunctions = ((uint32_t)1UL<<configSaveFuncs[1]) | ((uint32_t)1UL<<configSaveFuncs[2]);
 					tmpLocoConfig.revFunctions = ((uint32_t)1UL<<configSaveFuncs[3]) | ((uint32_t)1UL<<configSaveFuncs[4]);
+					screenState = SCREEN_CONF_LOCOSLOT3_SETUP;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Cancel
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+
+				// Buttons handled, clear
+				buttonsPressed = 0;
+
+				break;
+
+
+//  Loco Configuration Screen 3
+//  00000000001111111111
+//  01234567890123456789
+// [nn   ACC BRK        ]
+// [     Fnn Fnn        ]
+// [     ^              ]
+// [ +++  >>> SAVE CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+
+			case SCREEN_CONF_LOCOSLOT3_SETUP:
+				lcd_clrscr();
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC BRK        ", locoSlotOption);
+				lcd_puts(screenLineBuffer);
+				configSaveU8 = 0;
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
+				{
+					uint8_t i;
+					for(i=0; i<5; i++)
+						configSaveFuncs[i] = 29; // Set all functions to 29 - which is unset
+
+					for(i=0; i<=28; i++)
+					{
+						if (tmpLocoConfig.accFunctions & ((uint32_t)1UL<<i))
+						{
+							configSaveFuncs[0] = i;
+							break;
+						}
+					}
+					for(i=0; i<=28; i++)
+					{
+						if (tmpLocoConfig.decFunctions & ((uint32_t)1UL<<i))
+						{
+							configSaveFuncs[1] = i;
+							break;
+						}
+					}
+					
+				}
+				screenState = SCREEN_CONF_LOCOSLOT3_DRAW;
+				
+				break;
+
+			case SCREEN_CONF_LOCOSLOT3_DRAW:
+				blankCursorLine();
+				for(uint8_t i=0; i<2; i++)
+				{
+					if (configSaveFuncs[i] >= 29)
+						strncpy(screenLineBuffer, "F--", sizeof(screenLineBuffer));
+					else
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), "F%02d", configSaveFuncs[i]);
+					switch(i)
+					{
+						case 0:
+							lcd_gotoxy(5, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(6, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 1:
+							lcd_gotoxy(9, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(10, 2);
+								lcd_puts("^^");
+							}
+							break;
+					}
+				}
+				screenState = SCREEN_CONF_LOCOSLOT3_IDLE;
+				break;
+
+			case SCREEN_CONF_LOCOSLOT3_IDLE:
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
+				{
+					configSaveFuncs[configSaveU8] = (configSaveFuncs[configSaveU8] + 1) % 30;
+					screenState = SCREEN_CONF_LOCOSLOT3_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 1)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_LOCOSLOT3_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					// Put the functions back in their bitmasks
+					tmpLocoConfig.accFunctions = ((uint32_t)1UL<<configSaveFuncs[0]);
+					tmpLocoConfig.decFunctions = ((uint32_t)1UL<<configSaveFuncs[1]);
 					saveLocoConfiguration(locoSlotOption, &tmpLocoConfig);
+
+					if (locoSlotOption == opsConfig.activeLocoConfig)
+					{
+						loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
+					}
 					screenState = SCREEN_CONF_LOCOLIST_SETUP;
 				}
 				else if (SOFTKEY_4 & buttonsPressed)
@@ -1871,7 +2001,10 @@ int main(void)
 
 				break;
 
-//  Loco Configuration Screen 2
+
+
+
+//  Backlight Timeout Configuration
 //  00000000001111111111
 //  01234567890123456789
 // [Backlight Timeout   ]
@@ -2404,8 +2537,10 @@ int main(void)
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
-					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
-					opState = STATE_LEARN;
+					if (opsConfig.requestedSpeed > 0)
+						opState = STATE_FWDDECEL;
+					else
+						opState = STATE_REVDECEL;
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if (SOFTKEY_4 & buttonsPressed)

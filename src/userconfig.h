@@ -12,6 +12,8 @@ typedef struct
 	uint8_t rampRate;
 	uint32_t fwdFunctions;
 	uint32_t revFunctions;
+	uint32_t accFunctions;
+	uint32_t decFunctions;
 	uint32_t allFunctions;
 } LocoConfig;
 
@@ -111,6 +113,9 @@ void firstTimeInitOpsConfiguration();
 #define EEP_LOCOCONFIG_ALLFUNC_OFFSET   0x0005
 #define EEP_LOCOCONFIG_FWDFUNC_OFFSET   0x0009
 #define EEP_LOCOCONFIG_REVFUNC_OFFSET   0x000D
+#define EEP_LOCOCONFIG_ACCFUNC_OFFSET   0x0011
+#define EEP_LOCOCONFIG_DECFUNC_OFFSET   0x0015
+
 
 #define EEP_LOCOCONFIG_BLOCK_SIZE   32
 

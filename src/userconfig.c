@@ -6,6 +6,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
+#include <avr/wdt.h>
 #include "userconfig.h"
 #include "macros.h"
 
@@ -140,6 +141,8 @@ void loadLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
 	locoConfig->allFunctions = loadLocoConfigFunctions(offset, EEP_LOCOCONFIG_ALLFUNC_OFFSET);
 	locoConfig->fwdFunctions = loadLocoConfigFunctions(offset, EEP_LOCOCONFIG_FWDFUNC_OFFSET);
 	locoConfig->revFunctions = loadLocoConfigFunctions(offset, EEP_LOCOCONFIG_REVFUNC_OFFSET);
+	locoConfig->accFunctions = loadLocoConfigFunctions(offset, EEP_LOCOCONFIG_ACCFUNC_OFFSET);
+	locoConfig->decFunctions = loadLocoConfigFunctions(offset, EEP_LOCOCONFIG_DECFUNC_OFFSET);
 }
 
 
@@ -184,6 +187,16 @@ bool saveLocoConfiguration(uint8_t whichConfig, LocoConfig* locoConfig)
 	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_REVFUNC_OFFSET + offset+2, 0xFF & (locoConfig->revFunctions>>8));
 	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_REVFUNC_OFFSET + offset+3, 0xFF & (locoConfig->revFunctions));
 
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_ACCFUNC_OFFSET + offset, 0xFF & (locoConfig->accFunctions>>24));
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_ACCFUNC_OFFSET + offset+1, 0xFF & (locoConfig->accFunctions>>16));
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_ACCFUNC_OFFSET + offset+2, 0xFF & (locoConfig->accFunctions>>8));
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_ACCFUNC_OFFSET + offset+3, 0xFF & (locoConfig->accFunctions));
+
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_DECFUNC_OFFSET + offset, 0xFF & (locoConfig->decFunctions>>24));
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_DECFUNC_OFFSET + offset+1, 0xFF & (locoConfig->decFunctions>>16));
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_DECFUNC_OFFSET + offset+2, 0xFF & (locoConfig->decFunctions>>8));
+	eeprom_write_byte((uint8_t*)EEP_LOCOCONFIG_DECFUNC_OFFSET + offset+3, 0xFF & (locoConfig->decFunctions));
+
 	return true;
 }
 
@@ -195,6 +208,7 @@ void firstTimeInitLocoConfiguration()
 	for(uint8_t i=0; i<NUM_LOCO_OPTIONS; i++)
 	{
 		memset(&l, 0, sizeof(LocoConfig));
+		wdt_reset();
 		if (0 == i)
 		{
 			// DC configuration
@@ -211,6 +225,9 @@ void firstTimeInitLocoConfiguration()
 			l.allFunctions = 0x01; //F0
 			l.fwdFunctions = 0;
 			l.revFunctions = 0;
+			l.accFunctions = 0;
+			l.decFunctions = 0;
+
 		} else {
 			l.address = 3; // Default DCC address of 3
 			l.shortDCCAddress = true;
@@ -219,6 +236,9 @@ void firstTimeInitLocoConfiguration()
 			l.allFunctions = 0x01; //F0
 			l.fwdFunctions = 0;
 			l.revFunctions = 0;
+			l.accFunctions = 0;
+			l.decFunctions = 0;
+
 		}
 		saveLocoConfiguration(i, &l);
 	}
@@ -265,12 +285,14 @@ void firstTimeInitAccConfig()
 	acc.trigMode = ACC_DISBL;
 	for(uint8_t i=0; i<NUM_ACC_OPTIONS; i++)
 	{
+		wdt_reset();
 		saveAccConfiguration(i, &acc);
 	}
 }
 
 void firstTimeInitConfig()
 {
+	wdt_reset();
 	firstTimeInitOpsConfiguration();
 	firstTimeInitLocoConfiguration();
 	firstTimeInitAccConfig();

@@ -279,21 +279,21 @@ void dcc_scheduler()
 			break;
 			
 		case 4:
-			nextDCCPacket.data[len++] = 0b10100000 | (0x0F & (dcc_currentFuncs>>5)); // Function group 2 (F5-F8)
+			nextDCCPacket.data[len++] = 0b10110000 | (0x0F & (dcc_currentFuncs>>5)); // Function group 2 (F5-F8)
 			break;
 
 		case 6:
-			nextDCCPacket.data[len++] = 0b10110000 | (0x0F & (dcc_currentFuncs>>9)); // Function group 2 (F5-F8)
+			nextDCCPacket.data[len++] = 0b10100000 | (0x0F & (dcc_currentFuncs>>9)); // Function group 3 (F9-F12)
 			break;
 
 		case 8:
 			nextDCCPacket.data[len++] = 0b11011110;
-			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>13); // Function group 2 (F5-F8)
+			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>13); // Function group 4 (F13-F20)
 			break;
 
 		case 10:
 			nextDCCPacket.data[len++] = 0b11011111;
-			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>20); // Function group 2 (F5-F8)
+			nextDCCPacket.data[len++] = 0xFF & (dcc_currentFuncs>>20); // Function group 5 (F21-F28)
 			break;
 
 		
