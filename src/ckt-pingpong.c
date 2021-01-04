@@ -967,7 +967,9 @@ int main(void)
 			{
 				// Ramp rate is the number of deciseconds it should take to go from 0-max
 				// What we need is the speed change per decisecond
-				uint16_t incrementsPerDecisec = (int16_t)currentLoco.maxSpeed*100 / currentLoco.rampRate;
+				// Fix 1/4/2021 - add a floor for the max speed, otherwise at 0 it never turns off, and at only a couple percent
+				//  it takes forever
+				uint16_t incrementsPerDecisec = (int16_t)max(5,currentLoco.maxSpeed)*100 / currentLoco.rampRate;
 				
 				// Which is less, the current difference or the ramp increment?
 				uint16_t increment = min(abs(opsConfig.speed - opsConfig.requestedSpeed), incrementsPerDecisec);
@@ -1626,12 +1628,13 @@ int main(void)
 							{
 								tmpLocoConfig.shortDCCAddress = false;
 							} else {
-								tmpLocoConfig.address = deciIncrement(tmpLocoConfig.address, 10999, 0, 3 );
-								if (tmpLocoConfig.address >= 10000)
+								if (9 == tmpLocoConfig.address / 1000)
 								{
 									tmpLocoConfig.shortDCCAddress = true;
 									tmpLocoConfig.address %= 1000;
 									tmpLocoConfig.address = min(tmpLocoConfig.address, 127);
+								} else {
+									tmpLocoConfig.address = deciIncrement(tmpLocoConfig.address, 9999, 0, 3 );
 								}
 							}
 							break;
@@ -2515,14 +2518,19 @@ int main(void)
 				break;
 
 			case SCREEN_CONF_MANUAL_DRAW:
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", opsConfig.requestedSpeed<0?'R':'F', currentLoco.maxSpeed);
-				lcd_gotoxy(12, 1);
-				lcd_puts(screenLineBuffer);
 				drawSoftKeys_p((currentLoco.maxSpeed < 100)?PSTR("SPD+"):PSTR(""), (currentLoco.maxSpeed > 0)?PSTR("SPD-"):PSTR(""), PSTR("F<>R"), PSTR("BACK"));
 				screenState = SCREEN_CONF_MANUAL_IDLE;
 				break;
 
 			case SCREEN_CONF_MANUAL_IDLE:
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", opsConfig.requestedSpeed<0?'R':'F', currentLoco.maxSpeed);
+				lcd_gotoxy(12, 1);
+				lcd_puts(screenLineBuffer);
+
+/*				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05d %05d %03d", opsConfig.requestedSpeed, opsConfig.speed, currentLoco.maxSpeed);
+				lcd_gotoxy(0, 2);
+				lcd_puts(screenLineBuffer);*/
+
 				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
 				{
 					if (currentLoco.maxSpeed < 100)
