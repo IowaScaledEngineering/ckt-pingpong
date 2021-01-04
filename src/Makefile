@@ -42,7 +42,7 @@ FUSE_E  = 0xFD
 GITREV := $(shell git rev-parse --short=6 HEAD)
 #REV    := $(shell ./git-revision.sh)
 
-DEFINES := -DGIT_REV=0x$(GITREV)L -DENABLE_WATCHDOG -DHWREV_MAJOR=1 -DHWREV_MINOR=0 -DSWREV_MAJOR=1 -DSWREV_MINOR=0
+DEFINES := -DGIT_REV=0x$(GITREV)L -DENABLE_WATCHDOG -DHWREV_MAJOR=1 -DHWREV_MINOR=0 -DSWREV_MAJOR=1 -DSWREV_MINOR=1
 
 SRCS = $(BASE_NAME).c lcd.c dc.c dcc.c userconfig.c increment.c
 INCS = lcd.h dc.h dcc.h userconfig.h increment.h
