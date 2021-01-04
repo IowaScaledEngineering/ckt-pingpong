@@ -1628,7 +1628,7 @@ int main(void)
 							{
 								tmpLocoConfig.shortDCCAddress = false;
 							} else {
-								if (9 == tmpLocoConfig.address / 1000)
+								if ((9 == tmpLocoConfig.address / 1000) && (tmpLocoConfig.address % 1000 <= 127))
 								{
 									tmpLocoConfig.shortDCCAddress = true;
 									tmpLocoConfig.address %= 1000;
