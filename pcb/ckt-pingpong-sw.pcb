@@ -903,7 +903,7 @@ Layer(4 "bottom silk" "silk")
 Layer(5 "top silk" "silk")
 (
 	Line[1460.00mil 410.00mil 525.00mil 410.00mil 10.00mil 16.00mil "clearline"]
-	Text[1895.00mil 1790.00mil 1 163 "AUX IN" "clearline"]
+	Text[1895.00mil 1875.00mil 1 163 "MOTORMAN" "clearline"]
 	Text[155.00mil 1755.00mil 0 163 "A" "clearline"]
 	Text[745.00mil 1755.00mil 0 163 "B" "clearline"]
 	Text[745.00mil 1880.00mil 0 163 "TRACK" "clearline"]
