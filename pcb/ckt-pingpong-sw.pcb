@@ -800,21 +800,6 @@ Element["" "Terminal Block" "" "" 1755.00mil 1650.00mil 45.00mil 20.00mil 3 100 
 
 	)
 
-Element["onsolder" "" "" "" 1000.00mil 1000.00mil 0.0000 0.0000 0 100 "onsolder"]
-(
-	Pin[-7.1922mm 5.2254mm 103.00mil 20.00mil 109.00mil 73.00mil "" "5" ""]
-	Pin[-7.1922mm -5.2254mm 103.00mil 20.00mil 109.00mil 73.00mil "" "3" ""]
-	Pin[-2.7471mm -8.4550mm 103.00mil 20.00mil 109.00mil 73.00mil "" "2" "thermal(1X)"]
-	Pin[2.7473mm -8.4549mm 103.00mil 20.00mil 109.00mil 73.00mil "" "1" "thermal(1X)"]
-	Pin[7.1922mm -5.2254mm 103.00mil 20.00mil 109.00mil 73.00mil "" "10" ""]
-	Pin[7.1922mm 5.2254mm 103.00mil 20.00mil 109.00mil 73.00mil "" "8" ""]
-	Pin[2.7471mm 8.4550mm 103.00mil 20.00mil 109.00mil 73.00mil "" "7" "thermal(1X)"]
-	Pin[-2.7473mm 8.4549mm 103.00mil 20.00mil 109.00mil 73.00mil "" "6" "thermal(1X)"]
-	ElementArc [2.1689mm -5.6573mm 15.00mil 15.00mil 306 360 30.00mil]
-	ElementArc [0.0000 0.0000 460.00mil 460.00mil 306 360 10.00mil]
-
-	)
-
 Element["" "#4 hex stand off" "" "" 1000.00mil 1700.00mil 0.0000 100.00mil 0 100 ""]
 (
 	Pin[0.0000 0.0000 293.68mil 20.00mil 299.68mil 128.50mil "screw" "1" ""]
@@ -833,17 +818,6 @@ Element["" "#4 hex stand off" "" "" 1800.00mil 450.00mil 0.0000 100.00mil 0 100 
 
 	)
 
-Element["" "Phoenix Contact MSTBA 5.08mm (200mil) 2-Position Terminal Block" "" "" 470.00mil 1590.00mil 5.00mil 145.00mil 0 100 ""]
-(
-	Pin[-100.00mil 0.0000 90.00mil 30.00mil 96.00mil 55.00mil "1" "1" "square,thermal(1X)"]
-	Pin[100.00mil 0.0000 90.00mil 30.00mil 96.00mil 55.00mil "2" "2" "thermal(1X)"]
-	ElementLine [-6.1000mm -3.0000mm -6.1000mm 10.0000mm 10.00mil]
-	ElementLine [-6.1000mm -3.0000mm 6.1000mm -3.0000mm 10.00mil]
-	ElementLine [6.1000mm -3.0000mm 6.1000mm 10.0000mm 10.00mil]
-	ElementLine [-6.1000mm 10.0000mm 6.1000mm 10.0000mm 10.00mil]
-
-	)
-
 Element["" "Phoenix Contact MSTBA 5.08mm (200mil) 2-Position Terminal Block" "" "" 415.00mil 1035.00mil -145.00mil 5.00mil 3 100 ""]
 (
 	Pin[0.0000 -100.00mil 90.00mil 30.00mil 96.00mil 55.00mil "1" "1" "square,edge2"]
@@ -854,40 +828,73 @@ Element["" "Phoenix Contact MSTBA 5.08mm (200mil) 2-Position Terminal Block" "" 
 	ElementLine [-10.0000mm -6.1000mm -10.0000mm 6.1000mm 10.00mil]
 
 	)
+
+Element["onsolder" "" "" "" 1000.00mil 1000.00mil 0.0000 0.0000 0 100 "onsolder"]
+(
+	Pin[-7.1922mm -5.2255mm 103.00mil 20.00mil 109.00mil 73.00mil "" "5" ""]
+	Pin[2.7471mm -8.4549mm 103.00mil 20.00mil 109.00mil 73.00mil "" "3" ""]
+	Pin[7.1923mm -5.2254mm 103.00mil 20.00mil 109.00mil 73.00mil "" "2" "thermal(1X)"]
+	Pin[8.8901mm 0.0001mm 103.00mil 20.00mil 109.00mil 73.00mil "" "1" "thermal(1X)"]
+	Pin[7.1922mm 5.2255mm 103.00mil 20.00mil 109.00mil 73.00mil "" "10" ""]
+	Pin[-2.7471mm 8.4549mm 103.00mil 20.00mil 109.00mil 73.00mil "" "8" ""]
+	Pin[-7.1923mm 5.2254mm 103.00mil 20.00mil 109.00mil 73.00mil "" "7" "thermal(1X)"]
+	Pin[-8.8901mm -0.0001mm 103.00mil 20.00mil 109.00mil 73.00mil "" "6" "thermal(1X)"]
+	ElementArc [6.0506mm 0.3145mm 15.00mil 15.00mil 234 360 30.00mil]
+	ElementArc [0.0000 0.0000 460.00mil 460.00mil 234 360 10.00mil]
+
+	)
+
+Element["" "Phoenix Contact MSTBA 5.08mm (200mil) 2-Position Terminal Block" "" "" 470.00mil 1590.00mil 5.00mil 145.00mil 0 100 ""]
+(
+	Pin[-100.00mil 0.0000 90.00mil 30.00mil 96.00mil 55.00mil "1" "1" "square,thermal(1X)"]
+	Pin[100.00mil 0.0000 90.00mil 30.00mil 96.00mil 55.00mil "2" "2" "thermal(1X)"]
+	ElementLine [-6.1000mm -3.0000mm -6.1000mm 10.0000mm 10.00mil]
+	ElementLine [-6.1000mm -3.0000mm 6.1000mm -3.0000mm 10.00mil]
+	ElementLine [6.1000mm -3.0000mm 6.1000mm 10.0000mm 10.00mil]
+	ElementLine [-6.1000mm 10.0000mm 6.1000mm 10.0000mm 10.00mil]
+
+	)
 Layer(1 "top" "copper")
 (
-	Line[22.6527mm 33.8549mm 28.1470mm 33.8549mm 125.00mil 16.00mil "clearline"]
-	Line[28.1470mm 33.8549mm 28.1471mm 33.8550mm 125.00mil 16.00mil "clearline"]
-	Line[22.6529mm 16.9450mm 28.1472mm 16.9450mm 125.00mil 16.00mil "clearline"]
-	Line[28.1472mm 16.9450mm 28.1473mm 667.13mil 125.00mil 16.00mil "clearline"]
-	Line[18.2078mm 30.6254mm 22.0362mm 1055.00mil 125.00mil 16.00mil "clearline"]
-	Line[22.0362mm 1055.00mil 1340.00mil 1055.00mil 125.00mil 16.00mil "clearline"]
-	Line[1340.00mil 1055.00mil 1540.00mil 1255.00mil 125.00mil 16.00mil "clearline"]
-	Line[1540.00mil 1255.00mil 1540.00mil 1630.00mil 125.00mil 16.00mil "clearline"]
-	Line[1540.00mil 1630.00mil 1660.00mil 1750.00mil 125.00mil 16.00mil "clearline"]
-	Line[1660.00mil 1750.00mil 1755.00mil 1750.00mil 125.00mil 16.00mil "clearline"]
-	Line[32.5922mm 30.6254mm 32.5922mm 34.8448mm 125.00mil 16.00mil "clearline"]
-	Line[32.5922mm 34.8448mm 1185.00mil 1470.00mil 125.00mil 16.00mil "clearline"]
-	Line[1185.00mil 1470.00mil 750.00mil 1470.00mil 125.00mil 16.00mil "clearline"]
-	Line[750.00mil 1470.00mil 415.00mil 1135.00mil 125.00mil 16.00mil "clearline"]
-	Line[18.2078mm 20.1746mm 14.1154mm 20.1746mm 125.00mil 16.00mil "clearline"]
-	Line[14.1154mm 20.1746mm 415.00mil 935.00mil 125.00mil 16.00mil "clearline"]
-	Line[32.5922mm 20.1746mm 1755.00mil 32.1594mm 125.00mil 16.00mil "clearline"]
-	Line[1755.00mil 32.1594mm 1755.00mil 1550.00mil 125.00mil 16.00mil "clearline"]
+	Line[1755.00mil 1550.00mil 41.3367mm 1550.00mil 125.00mil 16.00mil "clearline"]
+	Line[41.3367mm 1550.00mil 32.5922mm 30.6255mm 125.00mil 16.00mil "clearline"]
+	Line[1000.00mil 925.00mil 22.0795mm 20.1745mm 125.00mil 16.00mil "clearline"]
+	Line[22.0795mm 20.1745mm 18.2078mm 20.1745mm 125.00mil 16.00mil "clearline"]
+	Line[415.00mil 935.00mil 415.00mil 830.00mil 125.00mil 16.00mil "clearline"]
+	Line[415.00mil 830.00mil 610.00mil 635.00mil 125.00mil 16.00mil "clearline"]
+	Line[610.00mil 635.00mil 27.3311mm 635.00mil 125.00mil 16.00mil "clearline"]
+	Line[27.3311mm 635.00mil 28.1471mm 16.9451mm 125.00mil 16.00mil "clearline"]
+	Line[32.5923mm 20.1746mm 1350.00mil 25.4001mm 125.00mil 16.00mil "clearline"]
+	Line[18.2077mm 30.6254mm 16.5099mm 25.3999mm 125.00mil 16.00mil "clearline"]
+	Line[415.00mil 1135.00mil 415.00mil 1310.00mil 125.00mil 16.00mil "clearline"]
+	Line[415.00mil 1310.00mil 490.00mil 1385.00mil 125.00mil 16.00mil "clearline"]
+	Line[490.00mil 1385.00mil 21.3288mm 1385.00mil 125.00mil 16.00mil "clearline"]
+	Line[21.3288mm 1385.00mil 22.6529mm 33.8549mm 125.00mil 16.00mil "clearline"]
+	Line[1755.00mil 1750.00mil 1565.00mil 1750.00mil 125.00mil 16.00mil "clearline"]
+	Line[1565.00mil 1750.00mil 1000.00mil 1185.00mil 125.00mil 16.00mil "clearline"]
+	Line[1000.00mil 925.00mil 1000.00mil 1185.00mil 125.00mil 16.00mil "clearline"]
 )
 Layer(2 "bottom" "copper")
 (
 	Polygon("clearpoly")
 	(
-		[480.00mil 1975.00mil] [32.5922mm 1975.00mil] [32.5922mm 30.6254mm] [480.00mil 30.6254mm] 
+		[480.00mil 1975.00mil] [1000.00mil 1975.00mil] [1000.00mil 900.00mil] [480.00mil 900.00mil] 
 	)
 	Polygon("clearpoly")
 	(
-		[1285.00mil 1140.00mil] [25.00mil 1140.00mil] [25.00mil 605.00mil] [1285.00mil 605.00mil] 
+		[460.00mil 1975.00mil] [25.00mil 1975.00mil] [25.00mil 275.00mil] [460.00mil 275.00mil] 
 	)
 	Polygon("clearpoly")
 	(
-		[25.00mil 605.00mil] [460.00mil 605.00mil] [460.00mil 1975.00mil] [25.00mil 1975.00mil] 
+		[25.00mil 275.00mil] [1500.00mil 275.00mil] [1500.00mil 880.00mil] [25.00mil 880.00mil] 
+	)
+	Polygon("clearpoly")
+	(
+		[1020.00mil 1105.00mil] [1975.00mil 1105.00mil] [1975.00mil 275.00mil] [1020.00mil 275.00mil] 
+	)
+	Polygon("clearpoly")
+	(
+		[770.00mil 1975.00mil] [1560.00mil 1975.00mil] [1560.00mil 1125.00mil] [770.00mil 1125.00mil] 
 	)
 )
 Layer(3 "outline" "outline")
