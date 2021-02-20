@@ -1,0 +1,22 @@
+pingpong-faceplate:
+Print Settings = Faceplate
+-abc Bottom Fill Pattern = Rectilinear
+-abc Fill Angle = 0
+Add modifier box
+	50x50x50
+	-57,2.5,19.38
+	Perimeters = 2
+
+-------
+
+knob:
+Print Settings = 0.15mm QUALITY
+Perimeters = 1
+Seam Position = Rear
+Bottom Fill Pattern = Hilbert Curve
+
+-pointer Bottom Fill Pattern = Rectilinear
+
+Flip so indicator stripe in down (on the bed)
+Rotate so indicator stripe points toward front (seam is at bottom of finished knob)
+
