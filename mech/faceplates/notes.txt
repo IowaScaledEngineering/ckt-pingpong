@@ -1,6 +1,6 @@
 pingpong-faceplate:
 Print Settings = Faceplate
--abc Bottom Fill Pattern = Rectilinear
+-abc Bottom Fill Pattern = Monotonic
 -abc Fill Angle = 0
 Add modifier box
 	50x50x50
@@ -15,7 +15,7 @@ Perimeters = 1
 Seam Position = Rear
 Bottom Fill Pattern = Hilbert Curve
 
--pointer Bottom Fill Pattern = Rectilinear
+-pointer Bottom Fill Pattern = Monotonic
 
 Flip so indicator stripe in down (on the bed)
 Rotate so indicator stripe points toward front (seam is at bottom of finished knob)
