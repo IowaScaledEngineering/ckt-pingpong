@@ -474,17 +474,23 @@ void calcEndpointAccFunctions(uint8_t trackStatus, AccConfig* accConfig, OpState
 		switch(accConfig[r].trigMode)
 		{
 			case ACC_LS_RC:
-				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				if (opState == STATE_FWDDECEL || opState == STATE_REVDECEL)
+				{
+					if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				}
 				break;
 				
 			case ACC_LC_RS:
-				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
-				else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				if (opState == STATE_FWDDECEL || opState == STATE_REVDECEL)
+				{
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				}
 				break;
 
 			case ACC_LSTOG:
