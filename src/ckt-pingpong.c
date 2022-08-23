@@ -1,11 +1,11 @@
 /*************************************************************************
-Title:    CKT-PINGPONG v1.0
+Title:    CKT-PINGPONG v1.2
 Authors:  Nathan D. Holmes <maverick@drgw.net>
 File:     $Id: $
 License:  GNU General Public License v3
 
 LICENSE:
-    Copyright (C) 2020 Nathan D. Holmes (maverick@drgw.net)
+    Copyright (C) 2022 Nathan D. Holmes (maverick@drgw.net)
      & Michael Petersen (railfan@drgw.net)
 
     This program is free software; you can redistribute it and/or modify
@@ -416,7 +416,7 @@ void drawSplashScreen()
 	lcd_gotoxy(0,1);
 	lcd_puts_p(PSTR(" Shuttle Controller "));
 	lcd_gotoxy(0,2);
-	lcd_puts_p(PSTR("Iowa Scaled Eng 2020"));
+	lcd_puts_p(PSTR("Iowa Scaled Eng 2022"));
 	lcd_gotoxy(0,3);
 	lcd_puts_p(PSTR("  www.iascaled.com  "));
 	
@@ -474,31 +474,37 @@ void calcEndpointAccFunctions(uint8_t trackStatus, AccConfig* accConfig, OpState
 		switch(accConfig[r].trigMode)
 		{
 			case ACC_LS_RC:
-				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				if (opState == STATE_FWDDECEL || opState == STATE_REVDECEL)
+				{
+					if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+				}
 				break;
 				
 			case ACC_LC_RS:
-				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
-				else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
-					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				if (opState == STATE_FWDDECEL || opState == STATE_REVDECEL)
+				{
+					if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
+					else if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+						accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
+				}
 				break;
 
 			case ACC_LSTOG:
-				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
 				break;
 
 			case ACC_RSTOG:
-				if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_RIGHT))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
 				break;
 
 			case ACC_XSTOG:
-				if (trackStatus & (TRACK_STATUS_SENSOR_RIGHT | TRACK_STATUS_SENSOR_LEFT))
+				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & (TRACK_STATUS_SENSOR_RIGHT | TRACK_STATUS_SENSOR_LEFT)))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = !accConfig[r].currentState);
 				break;
 
