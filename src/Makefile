@@ -33,7 +33,7 @@ PROGRAMMER_TYPE=iseavrprog
 PROGRAMMER_PORT=usb
 
 # ATmega1284PA 12MHz @ 3.3V
-DEVICE  = atmega1284p
+DEVICE  = atmega1284
 F_CPU   = 12000000  # Hz
 FUSE_L  = 0xFF
 FUSE_H  = 0xD1
