@@ -238,6 +238,10 @@ typedef enum
 	SCREEN_CONF_RELEARN_DRAW = 154,
 	SCREEN_CONF_RELEARN_IDLE = 155,
 
+	SCREEN_CONF_TIMEUNITS_SETUP = 200,
+	SCREEN_CONF_TIMEUNITS_DRAW = 201,
+	SCREEN_CONF_TIMEUNITS_IDLE = 202,
+
 	SCREEN_CONF_BACKLITE_SETUP = 235,
 	SCREEN_CONF_BACKLITE_DRAW  = 236,
 	SCREEN_CONF_BACKLITE_IDLE  = 237,
@@ -275,7 +279,8 @@ const ConfigurationOption configurationOptions[] =
   { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
   { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
   { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
-  { "Stop Relearns Dir",   SCREEN_CONF_RELEARN_SETUP },
+  { "Stop Relearns Dir",  SCREEN_CONF_RELEARN_SETUP },
+  { "Delay Time Units",   SCREEN_CONF_TIMEUNITS_SETUP },  
   { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
   { "Turn Off Backlight", SCREEN_CONF_BACKLITE_OFF },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
@@ -635,6 +640,7 @@ int main(void)
 	AccConfig accConfig[NUM_ACC_OPTIONS];
 	AccConfig tmpAccConfig;
 	uint16_t endStopDelay = 0;
+	uint16_t endStopMinuteCounter = 60;
 	uint16_t backlightDelay = 0xFFFF;
 	uint8_t buttonLongPressCounters[4] = {3,3,3,3};
 	DebounceState d;
@@ -951,8 +957,17 @@ int main(void)
 		{
 			eventFlags &= ~(EVENT_TIME_ADJUST_SPEED);
 			
-			if (endStopDelay > 0)
-				endStopDelay--;
+			if( (endStopMinuteCounter > 0) && (opsConfig.timeUnits) )
+			{
+				endStopMinuteCounter--;
+			}
+			else
+			{
+				if (endStopDelay > 0)
+					endStopDelay--;
+				endStopMinuteCounter = 60;  // Reload minute counter
+			}
+			
 
 			if (0 == opsConfig.backlightTimeout)
 				backlightDelay = 255;  // Never let the backlight time out if configured to never sleep
@@ -2103,7 +2118,10 @@ int main(void)
 				lcd_clrscr();
 				lcd_puts_p(PSTR("Endpoint Delay"));
 				lcd_gotoxy(1, 1);
-				lcd_puts_p(PSTR("Seconds: "));
+				if(opsConfig.timeUnits)
+					lcd_puts_p(PSTR("Minutes: "));
+				else
+					lcd_puts_p(PSTR("Seconds: "));
 				configSaveU8 = 10;
 				configSaveU8_2 = opsConfig.endpointDelay;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
@@ -2113,7 +2131,10 @@ int main(void)
 			case SCREEN_CONF_DELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				if(opsConfig.timeUnits)
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03dm", configSaveU8_2);
+				else
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2178,7 +2199,10 @@ int main(void)
 				lcd_clrscr();
 				lcd_puts_p(PSTR("Midpoint Delay"));
 				lcd_gotoxy(1, 1);
-				lcd_puts_p(PSTR("Seconds: "));
+				if(opsConfig.timeUnits)
+					lcd_puts_p(PSTR("Minutes: "));
+				else
+					lcd_puts_p(PSTR("Seconds: "));
 				configSaveU8 = 10;
 				configSaveU8_2 = opsConfig.midpointDelay;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
@@ -2188,7 +2212,10 @@ int main(void)
 			case SCREEN_CONF_MIDDELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				if(opsConfig.timeUnits)
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03dm", configSaveU8_2);
+				else
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2400,6 +2427,63 @@ int main(void)
 				// Buttons handled, clear
 				buttonsPressed = 0;	
 				break;
+
+
+
+			case SCREEN_CONF_TIMEUNITS_SETUP:
+				lcd_clrscr();
+				configSaveU8 = (opsConfig.timeUnits)?1:0;
+				lcd_gotoxy(0,0);
+				lcd_puts("Delay Time Units");
+				drawSoftKeys_p(PSTR("SEC"),  PSTR("MIN"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_TIMEUNITS_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Seconds"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] Minutes"));
+				lcd_gotoxy(1, (configSaveU8)?2:1);
+				lcd_putc('*');
+				screenState = SCREEN_CONF_TIMEUNITS_IDLE;
+				break;
+
+			case SCREEN_CONF_TIMEUNITS_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8 = 0;
+					screenState = SCREEN_CONF_TIMEUNITS_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8 = 1;
+					screenState = SCREEN_CONF_TIMEUNITS_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.timeUnits != (bool)configSaveU8))
+					{
+						opsConfig.timeUnits = (bool)configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
+
+
+
+
+
+
+
+
+
+
+
 
 //  Loco Configuration Screen 2
 //  00000000001111111111

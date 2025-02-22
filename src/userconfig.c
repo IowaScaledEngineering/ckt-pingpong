@@ -59,6 +59,7 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 	opsConfig->dcMode = (flags1 & OPSCONFIG_FLAGS1_DC_MODE)?true:false;
 	opsConfig->intStopsEnable = (flags1 & OPSCONFIG_FLAGS1_INT_STOPS_EN)?true:false;
 	opsConfig->startPaused = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;
+	opsConfig->timeUnits = (flags1 & OPSCONFIG_FLAGS1_TIME_UNITS)?true:false;
 	opsConfig->stopRetriggersLearnMode = (flags1 & OPSCONFIG_FLAGS1_STOP_RELEARN)?true:false;
 	
 	if(opsConfig->dcMode)
@@ -90,6 +91,8 @@ void saveOpsConfiguration(OpsConfiguration* opsConfig)
 		flags1 |= OPSCONFIG_FLAGS1_INT_STOPS_EN;
 	if (opsConfig->startPaused)
 		flags1 |= OPSCONFIG_FLAGS1_INIT_STOP;
+	if (opsConfig->timeUnits)
+		flags1 |= OPSCONFIG_FLAGS1_TIME_UNITS;
 	
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, flags1);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, min(opsConfig->activeLocoConfig, NUM_LOCO_OPTIONS));

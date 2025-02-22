@@ -60,6 +60,7 @@ typedef struct
 	uint8_t direction;
 	uint8_t endpointDelay;
 	uint8_t midpointDelay;
+	bool timeUnits;
 	uint8_t backlightTimeout;
 } OpsConfiguration;
 
@@ -73,6 +74,7 @@ typedef struct
 #define OPSCONFIG_FLAGS1_INIT_STOP    0x02
 #define OPSCONFIG_FLAGS1_INT_STOPS_EN 0x04
 #define OPSCONFIG_FLAGS1_STOP_RELEARN 0x08
+#define OPSCONFIG_FLAGS1_TIME_UNITS   0x10
 
 void loadOpsConfiguration(OpsConfiguration* opsConfig);
 void saveOpsConfiguration(OpsConfiguration* opsConfig);
