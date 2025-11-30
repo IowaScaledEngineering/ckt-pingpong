@@ -60,16 +60,18 @@ void loadOpsConfiguration(OpsConfiguration* opsConfig)
 	opsConfig->intStopsEnable = (flags1 & OPSCONFIG_FLAGS1_INT_STOPS_EN)?true:false;
 	opsConfig->startPaused = (flags1 & OPSCONFIG_FLAGS1_INIT_STOP)?true:false;
 	opsConfig->stopRetriggersLearnMode = (flags1 & OPSCONFIG_FLAGS1_STOP_RELEARN)?true:false;
-	
+	opsConfig->startFromSavedState = (flags1 & OPSCONFIG_FLAGS1_STATE_SAVE)?true:false;
+
 	if(opsConfig->dcMode)
 		opsConfig->activeLocoConfig = 0;
 	else
 		opsConfig->activeLocoConfig = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO);
 	
-	opsConfig->endpointDelay = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY);
-	opsConfig->midpointDelay = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY);
+	opsConfig->endpointDelay = eeprom_read_word((uint16_t*)EEP_OPSCONFIG_ENDPOINT_DELAY);
+	opsConfig->midpointDelay = eeprom_read_word((uint16_t*)EEP_OPSCONFIG_MIDPOINT_DELAY);
 	opsConfig->backlightTimeout = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY);
 
+	opsConfig->definedDirection = eeprom_read_word((uint16_t*)EEP_OPSCONFIG_DEF_DIRECTION);
 }
 
 void saveOpsConfiguration(OpsConfiguration* opsConfig)
@@ -90,12 +92,15 @@ void saveOpsConfiguration(OpsConfiguration* opsConfig)
 		flags1 |= OPSCONFIG_FLAGS1_INT_STOPS_EN;
 	if (opsConfig->startPaused)
 		flags1 |= OPSCONFIG_FLAGS1_INIT_STOP;
+	if (opsConfig->startFromSavedState)
+		flags1 |= OPSCONFIG_FLAGS1_STATE_SAVE;
 	
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, flags1);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, min(opsConfig->activeLocoConfig, NUM_LOCO_OPTIONS));
-	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, opsConfig->endpointDelay);
-	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, opsConfig->midpointDelay);
+	eeprom_write_word((uint16_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, opsConfig->endpointDelay);
+	eeprom_write_word((uint16_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, opsConfig->midpointDelay);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, opsConfig->backlightTimeout);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_DEF_DIRECTION, opsConfig->definedDirection);
 }
 
 void firstTimeInitOpsConfiguration()
@@ -106,6 +111,7 @@ void firstTimeInitOpsConfiguration()
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, 2);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, 0);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, 2);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_DEF_DIRECTION, 0);
 }
 
 uint32_t loadLocoConfigFunctions(uint16_t offset, uint16_t functionStart)

@@ -43,6 +43,12 @@ typedef struct
 	AccOperationMode trigMode;
 } AccConfig;
 
+typedef enum
+{
+	DIRECTION_LEARNED = 0,
+	DIRECTION_RIGHT_IS_FORWARD = 1,
+	DIRECTION_LEFT_IS_FORWARD = 2
+} SensorToDirection;
 
 typedef struct
 {
@@ -52,27 +58,33 @@ typedef struct
 	uint8_t activeLocoConfig;
 	bool startPaused;
 	bool stopRetriggersLearnMode;
-
+	SensorToDirection definedDirection;
+	bool startFromSavedState;
 	// Runtime elements
 	bool stopped;
 	int16_t speed;
 	int16_t requestedSpeed;
 	uint8_t direction;
-	uint8_t endpointDelay;
-	uint8_t midpointDelay;
+	uint16_t endpointDelay;
+	uint16_t midpointDelay;
 	uint8_t backlightTimeout;
 } OpsConfiguration;
 
 #define EEP_OPSCONFIG_FLAGS1          0x0000
 #define EEP_OPSCONFIG_ACTIVE_LOCO     0x0001
-#define EEP_OPSCONFIG_ENDPOINT_DELAY  0x0002
-#define EEP_OPSCONFIG_BACKLIGHT_DELAY 0x0003
-#define EEP_OPSCONFIG_MIDPOINT_DELAY  0x0004
+#define EEP_OPSCONFIG_ENDPOINT_DELAY  0x0002 // unit16 v1.3+
+#define EEP_OPSCONFIG_MIDPOINT_DELAY  0x0004 // uint16 v1.3+
+#define EEP_OPSCONFIG_BACKLIGHT_DELAY 0x0005 
+#define EEP_OPSCONFIG_DEF_DIRECTION   0x0006 
+
+
+
 
 #define OPSCONFIG_FLAGS1_DC_MODE      0x01
 #define OPSCONFIG_FLAGS1_INIT_STOP    0x02
 #define OPSCONFIG_FLAGS1_INT_STOPS_EN 0x04
 #define OPSCONFIG_FLAGS1_STOP_RELEARN 0x08
+#define OPSCONFIG_FLAGS1_STATE_SAVE   0x10
 
 void loadOpsConfiguration(OpsConfiguration* opsConfig);
 void saveOpsConfiguration(OpsConfiguration* opsConfig);
@@ -145,5 +157,6 @@ void saveAccConfiguration(uint8_t whichConfig, AccConfig* accConfig);
 
 const char* getAccModeText(AccOperationMode mode);
 
+#define EEP_WEAR_LEVEL_STATE_START_ADDR 0x800
 
 #endif

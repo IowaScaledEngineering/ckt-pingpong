@@ -41,6 +41,7 @@ LICENSE:
 #include "dcc.h"
 #include "userconfig.h"
 #include "increment.h"
+#include "eepromWearLevel.h"
 
 typedef enum
 {
@@ -61,6 +62,21 @@ typedef enum
 } OpState;
 
 
+typedef struct
+{
+	OpState opState;
+	uint8_t activeLocoConfig;
+	int16_t requestedSpeed;
+	uint8_t direction;
+	uint8_t fwdSensorMask;
+	uint8_t revSensorMask;
+	uint8_t fwdIntSensorMask;
+	uint8_t revIntSensorMask;
+} OpsStateSave;
+
+
+
+
 // ******** Start 100 Hz Timer - Very Accurate Version
 
 // Initialize a 100Hz timer for use in triggering events.
@@ -79,6 +95,8 @@ volatile uint8_t eventFlags=0;
 #define EVENT_ANALOG_READ_COMPLETE  0x10
 
 uint32_t loopCount = 0;
+OpsStateSave lastStateSave, stateSave;
+WearLeveledEEPROM stateSaveEEP;
 
 void blankCursorLine()
 {
@@ -238,6 +256,14 @@ typedef enum
 	SCREEN_CONF_RELEARN_DRAW = 154,
 	SCREEN_CONF_RELEARN_IDLE = 155,
 
+	SCREEN_CONF_STARTDIR_SETUP = 157,
+	SCREEN_CONF_STARTDIR_DRAW = 158,
+	SCREEN_CONF_STARTDIR_IDLE = 159,
+
+	SCREEN_CONF_SAVESTATE_SETUP = 160,
+	SCREEN_CONF_SAVESTATE_DRAW = 161,
+	SCREEN_CONF_SAVESTATE_IDLE = 162,
+
 	SCREEN_CONF_BACKLITE_SETUP = 235,
 	SCREEN_CONF_BACKLITE_DRAW  = 236,
 	SCREEN_CONF_BACKLITE_IDLE  = 237,
@@ -274,8 +300,10 @@ const ConfigurationOption configurationOptions[] =
   { "Endpoint Delay",     SCREEN_CONF_DELAY_SETUP },
   { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
   { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
+  { "Sensor Learning",    SCREEN_CONF_STARTDIR_SETUP },
+  { "Stop Relearns Dir",  SCREEN_CONF_RELEARN_SETUP },
+  { "Resume on Power On", SCREEN_CONF_SAVESTATE_SETUP },
   { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
-  { "Stop Relearns Dir",   SCREEN_CONF_RELEARN_SETUP },
   { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
   { "Turn Off Backlight", SCREEN_CONF_BACKLITE_OFF },  
   { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
@@ -399,6 +427,8 @@ void init(void)
 	initializeADC();
 	// Enable interrupts
 	sei();
+
+	ewlInit(&stateSaveEEP, (const uint8_t*)EEP_WEAR_LEVEL_STATE_START_ADDR, 50 * (sizeof(OpsStateSave)+1), sizeof(OpsStateSave));
 }
 
 void drawSplashScreen()
@@ -416,7 +446,7 @@ void drawSplashScreen()
 	lcd_gotoxy(0,1);
 	lcd_puts_p(PSTR(" Shuttle Controller "));
 	lcd_gotoxy(0,2);
-	lcd_puts_p(PSTR("Iowa Scaled Eng 2022"));
+	lcd_puts_p(PSTR("Iowa Scaled Eng 2026"));
 	lcd_gotoxy(0,3);
 	lcd_puts_p(PSTR("  www.iascaled.com  "));
 	
@@ -626,6 +656,7 @@ int main(void)
 	char screenLineBuffer[21];
 	uint8_t configSaveU8 = 0;
 	uint8_t configSaveU8_2 = 0;
+	uint16_t configSaveU16 = 0;
 	uint8_t configSaveFuncs[5];
 	uint8_t locoSlotOption = 0;
 	OpState opState = STATE_LEARN;
@@ -634,7 +665,7 @@ int main(void)
 	OpsConfiguration opsConfig;
 	AccConfig accConfig[NUM_ACC_OPTIONS];
 	AccConfig tmpAccConfig;
-	uint16_t endStopDelay = 0;
+	uint32_t endStopDelay = 0;
 	uint16_t backlightDelay = 0xFFFF;
 	uint8_t buttonLongPressCounters[4] = {3,3,3,3};
 	DebounceState d;
@@ -658,7 +689,6 @@ int main(void)
 	for(uint8_t i = 0; i<NUM_ACC_OPTIONS; i++)
 		loadAccConfiguration(i, &accConfig[i]);
 
-
 	// Initialize the output driver to either DC or DCC operation
 	// In the event of DCC, send the initial state of all accessories
 	
@@ -679,16 +709,50 @@ int main(void)
 	drawSplashScreen();
 	wdt_reset();
 
-
-
 	loopCount = 0;
 
-	opState = STATE_LEARN;
+	switch(opsConfig.definedDirection)
+	{
+		case DIRECTION_LEARNED:
+		default:
+			opState = STATE_LEARN;
+			break;
+		case DIRECTION_RIGHT_IS_FORWARD:
+			fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+			revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+			fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+			revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+			opState = STATE_FORWARD;
+			break;
+
+		case DIRECTION_LEFT_IS_FORWARD:
+			fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+			revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+			fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+			revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+			opState = STATE_FORWARD;
+			break;
+	}
+
 	opsConfig.stopped = opsConfig.startPaused;
 	opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
 	backlightDelay = opsConfig.backlightTimeout * 10;
 
-	while (1)
+	if (opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
+	{
+		opState = lastStateSave.opState;
+		opsConfig.activeLocoConfig = lastStateSave.activeLocoConfig;
+		loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
+		opsConfig.speed = opsConfig.requestedSpeed = lastStateSave.requestedSpeed;
+		opsConfig.direction = lastStateSave.direction;
+		fwdIntSensorMask = lastStateSave.fwdIntSensorMask;
+		fwdSensorMask = lastStateSave.fwdSensorMask;
+		revIntSensorMask = lastStateSave.revIntSensorMask;
+		revSensorMask = lastStateSave.revSensorMask;
+	}
+
+
+	while (true)
 	{
 		bool updateData = false;
 		loopCount++;
@@ -942,6 +1006,24 @@ int main(void)
 			default:
 				opState = STATE_LEARN;
 				break;
+		}
+
+		// STEP 2B - save the op state if it changed
+
+		stateSave.opState = opState;
+		stateSave.activeLocoConfig = opsConfig.activeLocoConfig;
+		stateSave.requestedSpeed = opsConfig.requestedSpeed;
+		stateSave.direction = opsConfig.direction;
+		stateSave.fwdIntSensorMask = fwdIntSensorMask;
+		stateSave.fwdSensorMask = fwdSensorMask;
+		stateSave.revIntSensorMask = revIntSensorMask;
+		stateSave.revSensorMask = revSensorMask;
+
+		// If it changed...
+		if (opsConfig.startFromSavedState &&  0 != memcmp(&lastStateSave, &stateSave, sizeof(OpsStateSave)))
+		{
+			ewlWrite(&stateSaveEEP, (const uint8_t*)&stateSave, sizeof(OpsStateSave));
+			memcpy(&lastStateSave, &stateSave, sizeof(OpsStateSave));
 		}
 
 		// STEP 3 - If it's time to adjust speed (every 100mS), send a new speed to the output
@@ -1741,7 +1823,7 @@ int main(void)
 
 			case SCREEN_CONF_LOCOSLOT2_SETUP:
 				lcd_clrscr();
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   FWD FWD REV REV", locoSlotOption);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   FWD FWD REV REV", min(99, locoSlotOption));
 				lcd_puts(screenLineBuffer);
 				configSaveU8 = 0;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("NEXT"), PSTR("CNCL"));
@@ -1907,7 +1989,8 @@ int main(void)
 
 			case SCREEN_CONF_LOCOSLOT3_SETUP:
 				lcd_clrscr();
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC BRK        ", locoSlotOption);
+				//                                                    01  234567890123456789 
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC BRK        ", min(99, locoSlotOption));
 				lcd_puts(screenLineBuffer);
 				configSaveU8 = 0;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
@@ -2091,7 +2174,7 @@ int main(void)
 //  00000000001111111111
 //  01234567890123456789
 // [ENDPOINT DELAY      ]
-// [ Seconds: yy.ys     ]
+// [ Seconds: yyyy.ys   ]
 // [          ^         ]
 // [ +++  >>> SAVE CNCL ]
 // nn = locomotive slot number or DC (slot 0)
@@ -2105,7 +2188,7 @@ int main(void)
 				lcd_gotoxy(1, 1);
 				lcd_puts_p(PSTR("Seconds: "));
 				configSaveU8 = 10;
-				configSaveU8_2 = opsConfig.endpointDelay;
+				configSaveU16 = opsConfig.endpointDelay;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
 				screenState = SCREEN_CONF_DELAY_DRAW;
 				break;
@@ -2113,7 +2196,7 @@ int main(void)
 			case SCREEN_CONF_DELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05ds", configSaveU16);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2128,7 +2211,9 @@ int main(void)
 						case 10:
 						case 11:
 						case 12:
-							configSaveU8_2 = deciIncrement(configSaveU8_2, 255, 0, 12 - configSaveU8);
+						case 13:
+						case 14:
+						configSaveU16 = deciIncrement(configSaveU16, 65535, 0, 14 - configSaveU8);
 							break;
 
 						default:
@@ -2143,9 +2228,11 @@ int main(void)
 					{
 						case 10:
 						case 11:
+						case 12:
+						case 13:
 							configSaveU8++;
 							break;
-						case 12:
+						case 14:
 							configSaveU8 = 10;
 							break;
 
@@ -2158,7 +2245,7 @@ int main(void)
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
-					opsConfig.endpointDelay = configSaveU8_2;
+					opsConfig.endpointDelay = configSaveU16;
 					saveOpsConfiguration(&opsConfig);
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
@@ -2180,7 +2267,7 @@ int main(void)
 				lcd_gotoxy(1, 1);
 				lcd_puts_p(PSTR("Seconds: "));
 				configSaveU8 = 10;
-				configSaveU8_2 = opsConfig.midpointDelay;
+				configSaveU16 = opsConfig.midpointDelay;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
 				screenState = SCREEN_CONF_MIDDELAY_DRAW;
 				break;
@@ -2188,7 +2275,7 @@ int main(void)
 			case SCREEN_CONF_MIDDELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05ds", configSaveU16);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2203,7 +2290,9 @@ int main(void)
 						case 10:
 						case 11:
 						case 12:
-							configSaveU8_2 = deciIncrement(configSaveU8_2, 255, 0, 12 - configSaveU8);
+						case 13:
+						case 14:
+							configSaveU16 = deciIncrement(configSaveU16, 65535, 0, 14 - configSaveU8);
 							break;
 
 						default:
@@ -2218,9 +2307,11 @@ int main(void)
 					{
 						case 10:
 						case 11:
+						case 12:
+						case 13:
 							configSaveU8++;
 							break;
-						case 12:
+						case 14:
 							configSaveU8 = 10;
 							break;
 
@@ -2233,7 +2324,7 @@ int main(void)
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
-					opsConfig.midpointDelay = configSaveU8_2;
+					opsConfig.midpointDelay = configSaveU16;
 					saveOpsConfiguration(&opsConfig);
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
@@ -2408,7 +2499,6 @@ int main(void)
 // [[ ] Running         ]
 // [[ ] Paused          ]
 // [ RUN  PAUS SAVE CNCL]
-
 			case SCREEN_CONF_PAUSED_SETUP:
 				lcd_clrscr();
 				configSaveU8 = (opsConfig.startPaused)?1:0;
@@ -2451,6 +2541,127 @@ int main(void)
 				// Buttons handled, clear
 				buttonsPressed = 0;	
 				break;
+
+//  Startup Learning Screen
+//  00000000001111111111
+//  01234567890123456789
+// [Forward Direction:  ]
+// [[ ] Learn           ]
+// [[ ] Right  [ ] Left ]
+// [ NEXT PREV SAVE CNCL]
+
+			case SCREEN_CONF_STARTDIR_SETUP:
+				lcd_clrscr();
+				configSaveU8 = opsConfig.definedDirection;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Forward Direction:"));
+				drawSoftKeys_p(PSTR("NEXT"),  PSTR("PREV"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_STARTDIR_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Learn"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] Right  [ ] Left"));
+				switch(configSaveU8)
+				{
+					case 0:
+					default:
+						lcd_gotoxy(1,1);
+						break;
+					case 1:
+						lcd_gotoxy(1,2);
+						break;
+					case 2:
+						lcd_gotoxy(12,2);
+						break;
+				}
+				lcd_putc('*');
+				screenState = SCREEN_CONF_STARTDIR_IDLE;
+				break;
+
+			case SCREEN_CONF_STARTDIR_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 2)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_STARTDIR_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					if (configSaveU8 == 0)
+						configSaveU8 = 2;
+					else 
+						configSaveU8--;
+
+					screenState = SCREEN_CONF_STARTDIR_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.definedDirection != (bool)configSaveU8))
+					{
+						opsConfig.definedDirection = (bool)configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
+
+//  00000000001111111111
+//  01234567890123456789
+// [Resume on Power On: ]
+// [[ ] Yes             ]
+// [[ ] No              ]
+// [ YES  NO  SAVE CNCL ]
+
+			case SCREEN_CONF_SAVESTATE_SETUP:
+				lcd_clrscr();
+				configSaveU8 = (opsConfig.startFromSavedState)?1:0;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Resume on Power On:"));
+				drawSoftKeys_p(PSTR("YES"),  PSTR(" NO "), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_SAVESTATE_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Yes"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] No"));
+				lcd_gotoxy(1, (configSaveU8)?1:2);
+				lcd_putc('*');
+				screenState = SCREEN_CONF_SAVESTATE_IDLE;
+				break;
+
+			case SCREEN_CONF_SAVESTATE_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8 = 1;
+					screenState = SCREEN_CONF_SAVESTATE_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8 = 0;
+					screenState = SCREEN_CONF_SAVESTATE_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.startFromSavedState != (bool)configSaveU8))
+					{
+						opsConfig.startFromSavedState = (bool)configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
 
 //  00000000001111111111
 //  01234567890123456789
