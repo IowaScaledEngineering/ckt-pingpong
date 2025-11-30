@@ -72,6 +72,7 @@ typedef struct
 	uint8_t revSensorMask;
 	uint8_t fwdIntSensorMask;
 	uint8_t revIntSensorMask;
+	uint8_t accStateMask;
 } OpsStateSave;
 
 
@@ -672,6 +673,7 @@ int main(void)
 	uint8_t fwdSensorMask = 0, revSensorMask = 0;
 	uint8_t fwdIntSensorMask = 0, revIntSensorMask = 0;
 	bool forceBacklightOff = false;
+	bool restoreFromSaved = false;
 
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
@@ -689,9 +691,15 @@ int main(void)
 	for(uint8_t i = 0; i<NUM_ACC_OPTIONS; i++)
 		loadAccConfiguration(i, &accConfig[i]);
 
+
+
+
+	if (opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
+	{
+		restoreFromSaved = true;
+	}
 	// Initialize the output driver to either DC or DCC operation
 	// In the event of DCC, send the initial state of all accessories
-	
 	if (opsConfig.dcMode)
 		dc_init();
 	else
@@ -701,8 +709,17 @@ int main(void)
 		{
 			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode)
 			{
-				accPktQueuePush(accConfig[r].address, accConfig[r].startState);
-				accConfig[r].currentState = accConfig[r].startState;
+				bool startState = false;
+
+				if (restoreFromSaved)
+				{
+					startState = accConfig[r].startState;
+				} else {
+					startState = (lastStateSave.accStateMask & (1<<r))?true:false;
+				}
+
+				accPktQueuePush(accConfig[r].address, startState);
+				accConfig[r].currentState = startState;
 			}
 		}
 	}
@@ -711,34 +728,7 @@ int main(void)
 
 	loopCount = 0;
 
-	switch(opsConfig.definedDirection)
-	{
-		case DIRECTION_LEARNED:
-		default:
-			opState = STATE_LEARN;
-			break;
-		case DIRECTION_RIGHT_IS_FORWARD:
-			fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
-			revSensorMask = TRACK_STATUS_SENSOR_LEFT;
-			fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
-			revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
-			opState = STATE_FORWARD;
-			break;
-
-		case DIRECTION_LEFT_IS_FORWARD:
-			fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
-			revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
-			fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
-			revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
-			opState = STATE_FORWARD;
-			break;
-	}
-
-	opsConfig.stopped = opsConfig.startPaused;
-	opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
-	backlightDelay = opsConfig.backlightTimeout * 10;
-
-	if (opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
+	if (restoreFromSaved)
 	{
 		opState = lastStateSave.opState;
 		opsConfig.activeLocoConfig = lastStateSave.activeLocoConfig;
@@ -749,8 +739,33 @@ int main(void)
 		fwdSensorMask = lastStateSave.fwdSensorMask;
 		revIntSensorMask = lastStateSave.revIntSensorMask;
 		revSensorMask = lastStateSave.revSensorMask;
-	}
+	} else {
+		switch(opsConfig.definedDirection)
+		{
+			case DIRECTION_LEARNED:
+			default:
+				opState = STATE_LEARN;
+				break;
+			case DIRECTION_RIGHT_IS_FORWARD:
+				fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+				revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+				fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+				revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+				opState = STATE_FORWARD;
+				break;
 
+			case DIRECTION_LEFT_IS_FORWARD:
+				fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+				revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+				fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+				revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+				opState = STATE_FORWARD;
+				break;
+		}
+	}
+	opsConfig.stopped = opsConfig.startPaused;
+	opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
+	backlightDelay = opsConfig.backlightTimeout * 10;
 
 	while (true)
 	{
@@ -1018,6 +1033,14 @@ int main(void)
 		stateSave.fwdSensorMask = fwdSensorMask;
 		stateSave.revIntSensorMask = revIntSensorMask;
 		stateSave.revSensorMask = revSensorMask;
+		stateSave.accStateMask = 0;
+		for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
+		{
+			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode && accConfig[r].currentState)
+			{
+				stateSave.accStateMask |= (1<<r);
+			}
+		}
 
 		// If it changed...
 		if (opsConfig.startFromSavedState &&  0 != memcmp(&lastStateSave, &stateSave, sizeof(OpsStateSave)))
@@ -2887,6 +2910,10 @@ int main(void)
 						(trackStatus & TRACK_STATUS_SENSOR_INT_LEFT)?"IL":"--", (trackStatus & TRACK_STATUS_SENSOR_INT_RIGHT)?"IR":"--");
 
 					lcd_puts(screenLineBuffer);
+
+/*					lcd_gotoxy(0,3);
+					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%08lu", eepromWrites);
+					lcd_puts(screenLineBuffer);*/
 				}
 				screenState = SCREEN_CONF_DIAG_IDLE;
 				break;
