@@ -58,14 +58,14 @@ typedef enum
 	STATE_FWDINTWAIT,
 	STATE_REVINTACCEL,
 	STATE_FWDINTACCEL,
+	STATE_FTOF_WAIT,
+	STATE_RTOR_WAIT,
 
 } OpState;
-
 
 typedef struct
 {
 	OpState opState;
-	uint8_t activeLocoConfig;
 	int16_t requestedSpeed;
 	uint8_t direction;
 	uint8_t fwdSensorMask;
@@ -74,8 +74,6 @@ typedef struct
 	uint8_t revIntSensorMask;
 	uint8_t accStateMask;
 } OpsStateSave;
-
-
 
 
 // ******** Start 100 Hz Timer - Very Accurate Version
@@ -265,6 +263,10 @@ typedef enum
 	SCREEN_CONF_SAVESTATE_DRAW = 161,
 	SCREEN_CONF_SAVESTATE_IDLE = 162,
 
+	SCREEN_CONF_TRAVELDIR_SETUP = 164,
+	SCREEN_CONF_TRAVELDIR_DRAW = 165,
+	SCREEN_CONF_TRAVELDIR_IDLE = 166,
+
 	SCREEN_CONF_BACKLITE_SETUP = 235,
 	SCREEN_CONF_BACKLITE_DRAW  = 236,
 	SCREEN_CONF_BACKLITE_IDLE  = 237,
@@ -301,6 +303,7 @@ const ConfigurationOption configurationOptions[] =
   { "Endpoint Delay",     SCREEN_CONF_DELAY_SETUP },
   { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
   { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
+  { "Travel Mode",        SCREEN_CONF_TRAVELDIR_SETUP},
   { "Sensor Learning",    SCREEN_CONF_STARTDIR_SETUP },
   { "Stop Relearns Dir",  SCREEN_CONF_RELEARN_SETUP },
   { "Resume on Power On", SCREEN_CONF_SAVESTATE_SETUP },
@@ -542,18 +545,18 @@ void calcEndpointAccFunctions(uint8_t trackStatus, AccConfig* accConfig, OpState
 			case ACC_LE_ST: // this should set when entering the left end, clear when departing
 				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT || opState == STATE_FTOF_WAIT || opState == STATE_RTOR_WAIT) && true == accConfig[r].currentState)
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
 				break;
 			case ACC_RE_ST:
 				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_RIGHT))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT || opState == STATE_FTOF_WAIT || opState == STATE_RTOR_WAIT) && true == accConfig[r].currentState)
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
 			case ACC_XE_ST:
 				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & (TRACK_STATUS_SENSOR_LEFT | TRACK_STATUS_SENSOR_RIGHT)))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT || opState == STATE_FTOF_WAIT || opState == STATE_RTOR_WAIT) && true == accConfig[r].currentState)
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
 				break;
 
@@ -674,6 +677,7 @@ int main(void)
 	uint8_t fwdIntSensorMask = 0, revIntSensorMask = 0;
 	bool forceBacklightOff = false;
 	bool restoreFromSaved = false;
+	uint8_t intermediateMask = 0;
 
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
@@ -690,9 +694,6 @@ int main(void)
 	loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
 	for(uint8_t i = 0; i<NUM_ACC_OPTIONS; i++)
 		loadAccConfiguration(i, &accConfig[i]);
-
-
-
 
 	if (opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
 	{
@@ -731,8 +732,6 @@ int main(void)
 	if (restoreFromSaved)
 	{
 		opState = lastStateSave.opState;
-		opsConfig.activeLocoConfig = lastStateSave.activeLocoConfig;
-		loadLocoConfiguration(opsConfig.activeLocoConfig, &currentLoco);
 		opsConfig.speed = opsConfig.requestedSpeed = lastStateSave.requestedSpeed;
 		opsConfig.direction = lastStateSave.direction;
 		fwdIntSensorMask = lastStateSave.fwdIntSensorMask;
@@ -932,17 +931,26 @@ int main(void)
 				break;
 
 			case STATE_REVERSE:
+				if (TRAVEL_FORWARD_NORMAL_INTERMEDIATES == opsConfig.travelMode)
+					intermediateMask = fwdIntSensorMask;
+				else 
+					intermediateMask = revIntSensorMask;
+
 				if (trackStatus & revSensorMask)
 				{
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVDECEL;
 					calcEndpointAccFunctions(trackStatus, accConfig, opState);
-				} else if (opsConfig.intStopsEnable && (trackStatus & revIntSensorMask)) {
+				} else if (opsConfig.intStopsEnable && (trackStatus & intermediateMask)) {
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVINTDECEL;
 					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 				} else {
 					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					// The other two travelMode configurations keep us going forward
+					if (TRAVEL_BIDIRECTIONAL != opsConfig.travelMode)
+						opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+
 				}
 				break;
 
@@ -970,12 +978,25 @@ int main(void)
 				{
 					opState = STATE_REVINTACCEL;
 					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					// The other two travelMode configurations keep us going forward
+					if (TRAVEL_BIDIRECTIONAL != opsConfig.travelMode)
+						opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+
 				}
 				break;
 
 			case STATE_REVINTACCEL:
+				if (TRAVEL_FORWARD_NORMAL_INTERMEDIATES == opsConfig.travelMode)
+					intermediateMask = fwdIntSensorMask;
+				else 
+					intermediateMask = revIntSensorMask;
+
 				opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
-				if (!(trackStatus & revIntSensorMask))
+				// The other two travelMode configurations keep us going forward
+				if (TRAVEL_BIDIRECTIONAL != opsConfig.travelMode)
+					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+
+				if (!(trackStatus & intermediateMask))
 				{
 					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 					opState = STATE_REVERSE;
@@ -987,7 +1008,7 @@ int main(void)
 				if (0 == opsConfig.speed)
 				{
 					endStopDelay = opsConfig.endpointDelay * 10;
-					opState = STATE_FTOR_WAIT;
+					opState = (TRAVEL_FORWARD_NORMAL_INTERMEDIATES == opsConfig.travelMode)?STATE_FTOF_WAIT:STATE_FTOR_WAIT;
 				}
 				break;
 
@@ -1026,7 +1047,6 @@ int main(void)
 		// STEP 2B - save the op state if it changed
 
 		stateSave.opState = opState;
-		stateSave.activeLocoConfig = opsConfig.activeLocoConfig;
 		stateSave.requestedSpeed = opsConfig.requestedSpeed;
 		stateSave.direction = opsConfig.direction;
 		stateSave.fwdIntSensorMask = fwdIntSensorMask;
@@ -1148,7 +1168,7 @@ int main(void)
 		}
 		
 		// STEP 5 - Deal with the gigantic UI management state machine
-		// This really should be better
+		// This really should be better.  I mean really.  This is truly terrible.
 		switch(screenState)
 		{
 			case SCREEN_MAIN_DRAW:
@@ -2624,7 +2644,7 @@ int main(void)
 				{
 					if (SOFTKEY_3 & buttonsPressed && (opsConfig.definedDirection != (bool)configSaveU8))
 					{
-						opsConfig.definedDirection = (bool)configSaveU8;
+						opsConfig.definedDirection = configSaveU8;
 						saveOpsConfiguration(&opsConfig);
 					}
 					lcd_clrscr();
@@ -2634,6 +2654,75 @@ int main(void)
 				buttonsPressed = 0;	
 				break;
 
+				
+//  Travel Model Configuration
+//  00000000001111111111
+//  01234567890123456789
+// [Travel Mode:        ]
+// [[ ] Bidirectional   ]
+// [[ ] Loop [ ] Lp2Lp  ]
+// [ NEXT PREV SAVE CNCL]
+
+			case SCREEN_CONF_TRAVELDIR_SETUP:
+				lcd_clrscr();
+				configSaveU8 = opsConfig.travelMode;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Travel Mode:"));
+				drawSoftKeys_p(PSTR("NEXT"),  PSTR("PREV"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_TRAVELDIR_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Bidirectional"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] Loop [ ] Lp2Lp"));
+				switch(configSaveU8)
+				{
+					case 0:
+					default:
+						lcd_gotoxy(1,1);
+						break;
+					case 1:
+						lcd_gotoxy(1,2);
+						break;
+					case 2:
+						lcd_gotoxy(10,2);
+						break;
+				}
+				lcd_putc('*');
+				screenState = SCREEN_CONF_TRAVELDIR_IDLE;
+				break;
+
+			case SCREEN_CONF_TRAVELDIR_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 2)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_TRAVELDIR_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					if (configSaveU8 == 0)
+						configSaveU8 = 2;
+					else 
+						configSaveU8--;
+
+					screenState = SCREEN_CONF_TRAVELDIR_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.definedDirection != (bool)configSaveU8))
+					{
+						opsConfig.travelMode = configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
 
 //  00000000001111111111
 //  01234567890123456789

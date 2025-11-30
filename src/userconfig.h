@@ -50,6 +50,19 @@ typedef enum
 	DIRECTION_LEFT_IS_FORWARD = 2
 } SensorToDirection;
 
+// TRAVEL_BIDIRECTIONAL - normal bi-directional movement
+// TRAVEL_FORWARD_NORMAL_INTERMEDIATES - Always go forward, use normal intermediates for forward movement
+// TRAVEL_FORWARD_FLIP_INTERMEDIATES - Always go forward, but use reverse intermediates when going "reverse"
+
+
+typedef enum
+{
+	TRAVEL_BIDIRECTIONAL = 0,
+	TRAVEL_FORWARD_NORMAL_INTERMEDIATES = 1,
+	TRAVEL_FORWARD_FLIP_INTERMEDIATES = 2
+} TravelDirectionMode;
+
+
 typedef struct
 {
 	// Loaded from EEP
@@ -60,6 +73,7 @@ typedef struct
 	bool stopRetriggersLearnMode;
 	SensorToDirection definedDirection;
 	bool startFromSavedState;
+	TravelDirectionMode travelMode;
 	// Runtime elements
 	bool stopped;
 	int16_t speed;
@@ -75,7 +89,8 @@ typedef struct
 #define EEP_OPSCONFIG_ENDPOINT_DELAY  0x0002 // unit16 v1.3+
 #define EEP_OPSCONFIG_MIDPOINT_DELAY  0x0004 // uint16 v1.3+
 #define EEP_OPSCONFIG_BACKLIGHT_DELAY 0x0005 
-#define EEP_OPSCONFIG_DEF_DIRECTION   0x0006 
+#define EEP_OPSCONFIG_DEF_DIRECTION   0x0006
+#define EEP_OPSCONFIG_TRAVEL_MODE     0x0007
 
 
 
