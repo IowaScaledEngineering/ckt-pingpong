@@ -42,6 +42,7 @@ LICENSE:
 #include "userconfig.h"
 #include "increment.h"
 #include "eepromWearLevel.h"
+#include "screenStates.h"
 
 typedef enum
 {
@@ -60,6 +61,7 @@ typedef enum
 	STATE_FWDINTACCEL,
 	STATE_FTOF_WAIT,
 	STATE_RTOR_WAIT,
+	STATE_FTOCLEAR,
 
 } OpState;
 
@@ -189,133 +191,6 @@ ISR(ADC_vect)
 	}
 }
 
-
-typedef enum
-{
-	SCREEN_MAIN_DRAW = 0,
-	SCREEN_MAIN_REFRESH = 1,
-	SCREEN_MAIN_IDLE = 2,
-	
-	SCREEN_CONF_MENU_DRAW = 10,
-	SCREEN_CONF_MENU_IDLE = 11,
-
-	SCREEN_FAST_RESET_DRAW = 14,
-	SCREEN_FAST_RESET_IDLE = 15,
-
-	SCREEN_CONF_OUTPUT_SETUP = 100,
-	SCREEN_CONF_OUTPUT_DRAW  = 101,
-	SCREEN_CONF_OUTPUT_IDLE  = 102,
-
-
-	SCREEN_CONF_LOCOLIST_SETUP = 105,
-	SCREEN_CONF_LOCOLIST_DRAW  = 106,
-	SCREEN_CONF_LOCOLIST_IDLE  = 107,
-
-	SCREEN_CONF_LOCOSLOT1_SETUP = 110,
-	SCREEN_CONF_LOCOSLOT1_DRAW  = 111,
-	SCREEN_CONF_LOCOSLOT1_IDLE  = 112,
-
-	SCREEN_CONF_LOCOSLOT2_SETUP = 113,
-	SCREEN_CONF_LOCOSLOT2_DRAW  = 114,
-	SCREEN_CONF_LOCOSLOT2_IDLE  = 115,
-
-	SCREEN_CONF_LOCOSLOT3_SETUP = 116,
-	SCREEN_CONF_LOCOSLOT3_DRAW  = 117,
-	SCREEN_CONF_LOCOSLOT3_IDLE  = 118,
-
-	SCREEN_LOAD_CONF_SETUP = 120,
-	SCREEN_LOAD_CONF_DRAW = 121,
-	SCREEN_LOAD_CONF_IDLE = 122,
-
-	SCREEN_CONF_DELAY_SETUP = 125,
-	SCREEN_CONF_DELAY_DRAW = 126,
-	SCREEN_CONF_DELAY_IDLE = 127,
-
-	SCREEN_CONF_PAUSED_SETUP = 130,
-	SCREEN_CONF_PAUSED_DRAW = 131,
-	SCREEN_CONF_PAUSED_IDLE = 132,
-	
-	SCREEN_CONF_MIDDELAY_SETUP = 135,
-	SCREEN_CONF_MIDDELAY_DRAW = 136,
-	SCREEN_CONF_MIDDELAY_IDLE = 137,
-	
-	SCREEN_CONF_INTSENSE_SETUP = 140,
-	SCREEN_CONF_INTSENSE_DRAW  = 141,
-	SCREEN_CONF_INTSENSE_IDLE  = 142,
-
-	SCREEN_CONF_ACCLIST_SETUP = 145,
-	SCREEN_CONF_ACCLIST_DRAW  = 146,
-	SCREEN_CONF_ACCLIST_IDLE  = 147,
-
-	SCREEN_CONF_ACCCONF_SETUP  = 150,
-	SCREEN_CONF_ACCCONF_DRAW   = 151,
-	SCREEN_CONF_ACCCONF_IDLE   = 152,
-	
-	SCREEN_CONF_RELEARN_SETUP = 153,
-	SCREEN_CONF_RELEARN_DRAW = 154,
-	SCREEN_CONF_RELEARN_IDLE = 155,
-
-	SCREEN_CONF_STARTDIR_SETUP = 157,
-	SCREEN_CONF_STARTDIR_DRAW = 158,
-	SCREEN_CONF_STARTDIR_IDLE = 159,
-
-	SCREEN_CONF_SAVESTATE_SETUP = 160,
-	SCREEN_CONF_SAVESTATE_DRAW = 161,
-	SCREEN_CONF_SAVESTATE_IDLE = 162,
-
-	SCREEN_CONF_TRAVELDIR_SETUP = 164,
-	SCREEN_CONF_TRAVELDIR_DRAW = 165,
-	SCREEN_CONF_TRAVELDIR_IDLE = 166,
-
-	SCREEN_CONF_BACKLITE_SETUP = 235,
-	SCREEN_CONF_BACKLITE_DRAW  = 236,
-	SCREEN_CONF_BACKLITE_IDLE  = 237,
-	SCREEN_CONF_BACKLITE_OFF   = 238,
-
-	SCREEN_CONF_MANUAL_SETUP = 240,
-	SCREEN_CONF_MANUAL_DRAW  = 241,
-	SCREEN_CONF_MANUAL_IDLE  = 242,
-
-	SCREEN_CONF_RESET_SETUP = 245,
-	SCREEN_CONF_RESET_DRAW  = 246,
-	SCREEN_CONF_RESET_IDLE  = 247,
-
-	SCREEN_CONF_DIAG_SETUP = 250,
-	SCREEN_CONF_DIAG_DRAW  = 251,
-	SCREEN_CONF_DIAG_IDLE  = 252,
-	
-	SCREEN_DONT_KNOW = 255
-
-} ScreenState;
-
-
-typedef struct
-{
-	const char* configName;
-	ScreenState configScreen;
-} ConfigurationOption;
-
-const ConfigurationOption configurationOptions[] = 
-{
-  { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
-  { "Accessory Config",   SCREEN_CONF_ACCLIST_SETUP },
-  { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
-  { "Endpoint Delay",     SCREEN_CONF_DELAY_SETUP },
-  { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
-  { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
-  { "Travel Mode",        SCREEN_CONF_TRAVELDIR_SETUP},
-  { "Sensor Learning",    SCREEN_CONF_STARTDIR_SETUP },
-  { "Stop Relearns Dir",  SCREEN_CONF_RELEARN_SETUP },
-  { "Resume on Power On", SCREEN_CONF_SAVESTATE_SETUP },
-  { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
-  { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
-  { "Turn Off Backlight", SCREEN_CONF_BACKLITE_OFF },  
-  { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
-  { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
-};
-
-#define NUM_CONF_OPTIONS  (sizeof(configurationOptions)/sizeof(ConfigurationOption))
-
 void initialize100HzTimer(void)
 {
 	// Set up timer 3 for 100Hz interrupts
@@ -347,6 +222,15 @@ ISR(TIMER3_COMPA_vect)
 	}
 }
 
+#define ANALOG_CHANNEL_PHASE_A_VOLTS  0
+#define ANALOG_CHANNEL_PHASE_B_VOLTS  1
+#define ANALOG_CHANNEL_INPUT_VOLTS    2
+#define ANALOG_CHANNEL_TRACK_CURRENT  3
+
+#define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
+#define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
+#define INT_SENSOR_INPUT_MASK (_BV(PC6) | _BV(PC7))
+
 #define LCD_BACKLIGHT_PIN  PB4
 
 void lcd_backlightOn()
@@ -360,10 +244,6 @@ void lcd_backlightOff()
 	DDRB |= _BV(LCD_BACKLIGHT_PIN);
 	PORTB &= ~_BV(LCD_BACKLIGHT_PIN);
 }
-
-#define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
-#define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
-#define INT_SENSOR_INPUT_MASK (_BV(PC6) | _BV(PC7))
 
 #define SOFTKEY_1      0x01
 #define SOFTKEY_2      0x02
@@ -637,17 +517,13 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 	lcd_puts_p(key4Text);
 }
 
-
-
-
-
-#define ANALOG_CHANNEL_PHASE_A_VOLTS  0
-#define ANALOG_CHANNEL_PHASE_B_VOLTS  1
-#define ANALOG_CHANNEL_INPUT_VOLTS    2
-#define ANALOG_CHANNEL_TRACK_CURRENT  3
-
-
-
+void forceReset()
+{
+	lcd_clrscr();
+	lcd_gotoxy(0,0);
+	lcd_puts_p(PSTR("RESETTING..."));
+	while(1);
+}
 
 int main(void)
 {
@@ -712,15 +588,14 @@ int main(void)
 			{
 				bool startState = false;
 
-				if (restoreFromSaved)
+				if (!restoreFromSaved)
 				{
 					startState = accConfig[r].startState;
 				} else {
 					startState = (lastStateSave.accStateMask & (1<<r))?true:false;
 				}
-
-				accPktQueuePush(accConfig[r].address, startState);
 				accConfig[r].currentState = startState;
+				accPktQueuePush(accConfig[r].address, startState);
 			}
 		}
 	}
@@ -848,6 +723,27 @@ int main(void)
 		switch(opState)
 		{
 			case STATE_LEARN:
+				// If for some reason we wind up in here and we're not supposed to learn directions, just
+				//  set up the sensor masks correctly and bail
+				if (DIRECTION_RIGHT_IS_FORWARD == opsConfig.definedDirection)
+				{
+					fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+					revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+					fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+					revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+					opState = STATE_FORWARD;
+					break;
+				}
+				else if (DIRECTION_LEFT_IS_FORWARD == opsConfig.definedDirection)
+				{
+					fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+					revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+					fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+					revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+					opState = STATE_FORWARD;
+					break;
+				}
+
 				fwdSensorMask = 0;
 				revSensorMask = 0;
 				fwdIntSensorMask = 0;
@@ -897,6 +793,22 @@ int main(void)
 				}
 				break;
 				
+			case STATE_FTOF_WAIT:
+				opsConfig.requestedSpeed = 0;
+				if (0 == endStopDelay)
+				{
+					calcEndpointAccFunctions(trackStatus, accConfig, opState);
+					opState = STATE_FTOCLEAR;
+				}
+				break;
+
+			case STATE_FTOCLEAR:
+				if (!(trackStatus & fwdSensorMask))
+					opState = STATE_FORWARD;
+				
+				opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed*100;
+				break;
+
 			case STATE_FTOR_WAIT:
 				opsConfig.requestedSpeed = 0;
 				if (0 == endStopDelay)
@@ -946,11 +858,11 @@ int main(void)
 					opState = STATE_REVINTDECEL;
 					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 				} else {
-					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
-					// The other two travelMode configurations keep us going forward
-					if (TRAVEL_BIDIRECTIONAL != opsConfig.travelMode)
-						opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
-
+					if (TRAVEL_BIDIRECTIONAL == opsConfig.travelMode)
+						opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					else
+						// The other two travelMode configurations keep us going forward
+						opsConfig.requestedSpeed = ((int16_t)currentLoco.maxSpeed*100);
 				}
 				break;
 
@@ -977,10 +889,12 @@ int main(void)
 				if (0 == endStopDelay)
 				{
 					opState = STATE_REVINTACCEL;
-					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
-					// The other two travelMode configurations keep us going forward
-					if (TRAVEL_BIDIRECTIONAL != opsConfig.travelMode)
-						opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+
+					if (TRAVEL_BIDIRECTIONAL == opsConfig.travelMode)
+						opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					else
+						// The other two travelMode configurations keep us going forward
+						opsConfig.requestedSpeed = ((int16_t)currentLoco.maxSpeed*100);
 
 				}
 				break;
@@ -991,10 +905,11 @@ int main(void)
 				else 
 					intermediateMask = revIntSensorMask;
 
-				opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
-				// The other two travelMode configurations keep us going forward
-				if (TRAVEL_BIDIRECTIONAL != opsConfig.travelMode)
-					opsConfig.requestedSpeed = -opsConfig.requestedSpeed;
+				if (TRAVEL_BIDIRECTIONAL == opsConfig.travelMode)
+					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+				else
+					// The other two travelMode configurations keep us going forward
+					opsConfig.requestedSpeed = ((int16_t)currentLoco.maxSpeed*100);
 
 				if (!(trackStatus & intermediateMask))
 				{
@@ -1241,6 +1156,10 @@ int main(void)
 						case STATE_FTOR_WAIT:
 							strcpy(opStateStr, "FTR ");
 							break;
+						case STATE_FTOF_WAIT:
+							strcpy(opStateStr, "FTF ");
+							break;
+
 						case STATE_RTOF_WAIT:
 							strcpy(opStateStr, "RTF ");
 							break;
@@ -1275,8 +1194,9 @@ int main(void)
 						case STATE_FWDINTACCEL:
 							strcpy(opStateStr, "FIA ");
 							break;
-
-
+						case STATE_FTOCLEAR:
+							strcpy(opStateStr, "FCL ");
+							break;
 						default:
 							snprintf(opStateStr, sizeof(opStateStr), "%03d", opState);
 							break;
@@ -1287,22 +1207,30 @@ int main(void)
 				lcd_gotoxy(10,2);
 				// [RMP:yy.ys L-?/R-?/I-]
 				lcd_putc('L');
-				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_LEFT)?'*':'-');
+
+				char c = '-';
+				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					c = '*';
+				lcd_putc(c);
 
 				if (TRACK_STATUS_SENSOR_LEFT == fwdSensorMask)
-					lcd_putc('F');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'F':'f');
 				else if (TRACK_STATUS_SENSOR_LEFT == revSensorMask)
-					lcd_putc('R');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'R':'r');
 				else
 					lcd_putc('?');
 				lcd_putc('/');
 				lcd_putc('R');
-				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'*':'-');
+
+				c = '-';
+				if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+					c = '*';
+				lcd_putc(c);
 
 				if (TRACK_STATUS_SENSOR_RIGHT == fwdSensorMask)
-					lcd_putc('F');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'F':'f');
 				else if (TRACK_STATUS_SENSOR_RIGHT == revSensorMask)
-					lcd_putc('R');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'R':'r');
 				else
 					lcd_putc('?');
 
@@ -2239,7 +2167,7 @@ int main(void)
 			case SCREEN_CONF_DELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05ds", configSaveU16);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05us", configSaveU16);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2318,7 +2246,7 @@ int main(void)
 			case SCREEN_CONF_MIDDELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05ds", configSaveU16);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05us", configSaveU16);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2646,6 +2574,7 @@ int main(void)
 					{
 						opsConfig.definedDirection = configSaveU8;
 						saveOpsConfiguration(&opsConfig);
+						opState = STATE_LEARN; // Put it back in learning mode
 					}
 					lcd_clrscr();
 					screenState = SCREEN_CONF_MENU_DRAW;
@@ -2716,9 +2645,11 @@ int main(void)
 					{
 						opsConfig.travelMode = configSaveU8;
 						saveOpsConfiguration(&opsConfig);
+						forceReset();
 					}
-					lcd_clrscr();
-					screenState = SCREEN_CONF_MENU_DRAW;
+
+//					screenState = SCREEN_CONF_MENU_DRAW;
+
 				}
 				// Buttons handled, clear
 				buttonsPressed = 0;	
@@ -2999,10 +2930,6 @@ int main(void)
 						(trackStatus & TRACK_STATUS_SENSOR_INT_LEFT)?"IL":"--", (trackStatus & TRACK_STATUS_SENSOR_INT_RIGHT)?"IR":"--");
 
 					lcd_puts(screenLineBuffer);
-
-/*					lcd_gotoxy(0,3);
-					snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%08lu", eepromWrites);
-					lcd_puts(screenLineBuffer);*/
 				}
 				screenState = SCREEN_CONF_DIAG_IDLE;
 				break;

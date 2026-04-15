@@ -110,8 +110,8 @@ void firstTimeInitOpsConfiguration()
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1, OPSCONFIG_FLAGS1_STOP_RELEARN);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_ACTIVE_LOCO, 1);
 	eeprom_write_word((uint16_t*)EEP_OPSCONFIG_ENDPOINT_DELAY, 2);
-	eeprom_write_word((uint16_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, 0);
-	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, 2);
+	eeprom_write_word((uint16_t*)EEP_OPSCONFIG_MIDPOINT_DELAY, 2);
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_BACKLIGHT_DELAY, 0);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_DEF_DIRECTION, (uint8_t)DIRECTION_LEARNED);
 	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_TRAVEL_MODE, (uint8_t)TRAVEL_BIDIRECTIONAL);
 
