@@ -2648,7 +2648,7 @@ int main(void)
 						forceReset();
 					}
 
-//					screenState = SCREEN_CONF_MENU_DRAW;
+					screenState = SCREEN_CONF_MENU_DRAW;
 
 				}
 				// Buttons handled, clear
