@@ -1,0 +1,157 @@
+# This script expects locomotive s000, 2 second stop, 1 second ramp
+# It expects learned directions
+
+# Configure functions
+PLOT_FUNC F0 Always On
+PLOT_FUNC F1 FWD 1
+PLOT_FUNC F2 REV 1
+PLOT_FUNC F3 FWD 2
+PLOT_FUNC F4 REV 1
+PLOT_FUNC F5 ACCEL
+PLOT_FUNC F6 DECEL
+
+PLOT_ACC 0001 CLR/LS-RC
+PLOT_ACC 0002 SET/LSTOG
+
+
+# Startup Process - power cycle, wait for splash, etc
+ECHO Script Startup, waiting for test harness
+DELAY 2.0
+ECHO Cycling power
+SET_POWER OFF
+DELAY 0.5
+SET_POWER ON
+
+DELAY 1
+
+# Reset graph to this start point
+ECHO Starting graph
+RESET_GRAPH
+
+DELAY 4
+
+# Learning mode - should go forward
+# Teach it that left is forward
+EXPECT_SPEED 0000 F 21 6.0
+
+ECHO Waiting to trip LEFT sensor
+
+DELAY 2
+
+SET_SENSOR L ON
+DELAY 0.2
+SET_SENSOR L OFF
+
+ECHO Waiting for stop
+EXPECT_SPEED_MIN 0000 F 1 0.8 3.0
+
+ECHO Waiting for reverse
+EXPECT_SPEED_MIN 0000 R 21 2.0  4.0
+
+# Trigger left sensor again on the way out
+ECHO Trigger LEFT sensor
+SET_SENSOR L ON
+DELAY 0.2
+SET_SENSOR L OFF
+
+# Block for Intermediate Travel to Right
+
+ECHO Waiting 5 seconds to trigger INTERMEDIATE LEFT sensor
+DELAY 5.0
+
+ECHO Trigger INTERMEDIATE LEFT sensor
+SET_SENSOR A ON
+DELAY 0.2
+SET_SENSOR A OFF
+
+ECHO Waiting for station stop
+EXPECT_SPEED_MIN 0000 F 1 0.8 3.0
+
+ECHO Waiting for station delay
+DELAY 2.0
+
+ECHO Waiting for station start
+EXPECT_SPEED_MIN 0000 R 21 0.8 3.0
+
+SET_SENSOR B ON
+DELAY 0.2
+SET_SENSOR B OFF
+
+ECHO Waiting 5 seconds to trigger RIGHT sensor
+DELAY 5.0
+
+# Block for Right End Sensor
+
+
+ECHO Verifying speed is still R/20
+EXPECT_SPEED 0000 R 21 1.0
+
+ECHO Trigger RIGHT sensor
+SET_SENSOR R ON
+DELAY 0.2
+SET_SENSOR R OFF
+
+ECHO Waiting for stop
+EXPECT_SPEED_MIN 0000 F 1 0.8 3.0
+DELAY 1.0
+EXPECT_SPEED_MIN 0000 F 21 0.8 3.0
+
+ECHO Trigger RIGHT sensor
+SET_SENSOR R ON
+DELAY 0.2
+SET_SENSOR R OFF
+
+
+# Block for Intermediate Travel to Left
+
+ECHO Waiting 5 seconds to trigger INTERMEDIATE RIGHT sensor
+DELAY 5.0
+
+ECHO Trigger INTERMEDIATE RIGHT sensor
+SET_SENSOR B ON
+DELAY 0.2
+SET_SENSOR B OFF
+
+ECHO Waiting for station stop
+EXPECT_SPEED_MIN 0000 F 1 0.8 3.0
+
+ECHO Waiting for station delay
+DELAY 2.0
+
+ECHO Waiting for station start
+EXPECT_SPEED_MIN 0000 F 21 0.8 3.0
+
+SET_SENSOR A ON
+DELAY 0.2
+SET_SENSOR A OFF
+
+
+# Block for Left End 
+
+
+
+ECHO Waiting 5 seconds to trigger left sensor
+DELAY 5.0
+
+ECHO Verifying speed is still F/20
+EXPECT_SPEED 0000 F 21 6.0
+
+ECHO Trigger LEFT sensor
+SET_SENSOR L ON
+DELAY 0.2
+SET_SENSOR L OFF
+
+ECHO Waiting for stop
+EXPECT_SPEED_MIN 0000 F 1 0.8 3.0
+
+ECHO Waiting for reverse
+EXPECT_SPEED_MIN 0000 R 21 2.0  4.0
+
+# Trigger left sensor again on the way out
+SET_SENSOR L ON
+DELAY 0.2
+SET_SENSOR L OFF
+
+SAVE_GRAPH test-basic.png
+
+
