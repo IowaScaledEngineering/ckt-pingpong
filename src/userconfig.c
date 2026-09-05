@@ -92,6 +92,8 @@ void saveOpsConfiguration(OpsConfiguration* opsConfig)
 		flags1 |= OPSCONFIG_FLAGS1_INT_STOPS_EN;
 	if (opsConfig->startPaused)
 		flags1 |= OPSCONFIG_FLAGS1_INIT_STOP;
+	if (opsConfig->stopRetriggersLearnMode)
+		flags1 |= OPSCONFIG_FLAGS1_STOP_RELEARN;
 	if (opsConfig->startFromSavedState)
 		flags1 |= OPSCONFIG_FLAGS1_STATE_SAVE;
 	
