@@ -315,7 +315,7 @@ void init(void)
 	ewlInit(&stateSaveEEP, (const uint8_t*)EEP_WEAR_LEVEL_STATE_START_ADDR, 50 * (sizeof(OpsStateSave)+1), sizeof(OpsStateSave));
 }
 
-void drawSplashScreen()
+void drawSplashScreen(uint8_t delayDecisecs)
 {
 	char buffer[24];
 	lcd_setup_bigdigits();
@@ -334,7 +334,7 @@ void drawSplashScreen()
 	lcd_gotoxy(0,3);
 	lcd_puts_p(PSTR("  www.iascaled.com  "));
 	
-	for(uint8_t i=0; i<30; i++)
+	for(uint8_t i=0; i<delayDecisecs; i++)
 	{
 		wdt_reset();
 		_delay_ms(100);
@@ -587,7 +587,7 @@ int main(void)
 			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode)
 			{
 				bool startState = false;
-
+				// FIXME?  Should this really be if "restore from saved and not learning mode?"
 				if (!restoreFromSaved)
 				{
 					startState = accConfig[r].startState;
@@ -599,10 +599,15 @@ int main(void)
 			}
 		}
 	}
-	drawSplashScreen();
+
+	// Minimize the delay in the splash screen if we're restoring from saved
+	// We don't want to miss a sensor input because we're displaying stuff
+	drawSplashScreen(restoreFromSaved?5:30);
 	wdt_reset();
 
 	loopCount = 0;
+
+	// FIXME?  Should this really be if "restore from saved and not learning mode?"
 
 	if (restoreFromSaved)
 	{
@@ -1024,6 +1029,11 @@ int main(void)
 					opsConfig.speed += increment;
 				else if (opsConfig.requestedSpeed < opsConfig.speed)
 					opsConfig.speed -= increment;
+
+				if (opsConfig.speed > 0)
+					opsConfig.direction = DIRECTION_FORWARD;
+				else if (opsConfig.speed < 0)
+					opsConfig.direction = DIRECTION_REVERSE;			
 			}
 
 			// Set speed / direction
@@ -1045,7 +1055,7 @@ int main(void)
 				
 				dcc_setSpeedAndDir(currentLoco.address, currentLoco.shortDCCAddress, 
 					abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1,
-					currentLoco.allFunctions | accDecFunctions | ((opsConfig.speed >= 0)?currentLoco.fwdFunctions:currentLoco.revFunctions));
+					currentLoco.allFunctions | accDecFunctions | ((opsConfig.direction == DIRECTION_FORWARD)?currentLoco.fwdFunctions:currentLoco.revFunctions));
 			}
 		}
 
@@ -1762,6 +1772,8 @@ int main(void)
 					{
 						// DC mode, we're saving
 						saveLocoConfiguration(0, &tmpLocoConfig);
+						// Load configuration and make active for DC, since there's no other way to do it
+						loadLocoConfiguration(0, &currentLoco);  
 						screenState = SCREEN_CONF_LOCOLIST_SETUP;
 					} else {
 						// DCC mode, on to the function screen
@@ -2602,7 +2614,7 @@ int main(void)
 
 			case SCREEN_CONF_TRAVELDIR_DRAW:
 				lcd_gotoxy(0,1);
-				lcd_puts_p(PSTR("[ ] Bidirectional"));
+				lcd_puts_p(PSTR("[ ] Point to Point"));
 				lcd_gotoxy(0,2);
 				lcd_puts_p(PSTR("[ ] Loop [ ] Lp2Lp"));
 				switch(configSaveU8)
@@ -2641,7 +2653,7 @@ int main(void)
 				}
 				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
 				{
-					if (SOFTKEY_3 & buttonsPressed && (opsConfig.definedDirection != (bool)configSaveU8))
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.travelMode != configSaveU8))
 					{
 						opsConfig.travelMode = configSaveU8;
 						saveOpsConfiguration(&opsConfig);
@@ -2649,7 +2661,6 @@ int main(void)
 					}
 
 					screenState = SCREEN_CONF_MENU_DRAW;
-
 				}
 				// Buttons handled, clear
 				buttonsPressed = 0;	

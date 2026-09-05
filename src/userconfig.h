@@ -62,6 +62,12 @@ typedef enum
 	TRAVEL_FORWARD_FLIP_INTERMEDIATES = 2
 } TravelDirectionMode;
 
+typedef enum
+{
+	DIRECTION_STOP    = 0,
+	DIRECTION_FORWARD = 1,
+	DIRECTION_REVERSE = 2
+} Direction;
 
 typedef struct
 {
