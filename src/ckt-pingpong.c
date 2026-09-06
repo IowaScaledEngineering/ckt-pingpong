@@ -62,6 +62,7 @@ typedef enum
 	STATE_FTOF_WAIT,
 	STATE_RTOR_WAIT,
 	STATE_FTOCLEAR,
+	STATE_MANUAL
 
 } OpState;
 
@@ -520,8 +521,8 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 void forceReset()
 {
 	lcd_clrscr();
-	lcd_gotoxy(0,0);
-	lcd_puts_p(PSTR("RESETTING..."));
+	lcd_gotoxy(0,1);
+	lcd_puts_p(PSTR("  *Reinitializing* "));
 	while(1);
 }
 
@@ -553,7 +554,11 @@ int main(void)
 	uint8_t fwdIntSensorMask = 0, revIntSensorMask = 0;
 	bool forceBacklightOff = false;
 	bool restoreFromSaved = false;
+	bool fastReinitialize = false;
 	uint8_t intermediateMask = 0;
+
+	uint8_t manualDirection = DIRECTION_FORWARD;
+	uint8_t manualSpeed = 0;
 
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
@@ -571,7 +576,10 @@ int main(void)
 	for(uint8_t i = 0; i<NUM_ACC_OPTIONS; i++)
 		loadAccConfiguration(i, &accConfig[i]);
 
-	if (opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
+
+	// isReinitialize needs to be first since it also clears the bit that forces a reinitialize.  Otherwise shortcutting might miss it
+	fastReinitialize = isFastReinitialize();
+	if (!fastReinitialize && opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
 	{
 		restoreFromSaved = true;
 	}
@@ -602,12 +610,11 @@ int main(void)
 
 	// Minimize the delay in the splash screen if we're restoring from saved
 	// We don't want to miss a sensor input because we're displaying stuff
-	drawSplashScreen(restoreFromSaved?5:30);
+	if (!restoreFromSaved && !fastReinitialize)
+		drawSplashScreen(30);
 	wdt_reset();
 
 	loopCount = 0;
-
-	// FIXME?  Should this really be if "restore from saved and not learning mode?"
 
 	if (restoreFromSaved)
 	{
@@ -727,6 +734,9 @@ int main(void)
 
 		switch(opState)
 		{
+			case STATE_MANUAL:
+				break;
+
 			case STATE_LEARN:
 				// If for some reason we wind up in here and we're not supposed to learn directions, just
 				//  set up the sensor masks correctly and bail
@@ -1012,10 +1022,16 @@ int main(void)
 			}
 
 			// Time to re-evaluate speed
-			if (opsConfig.stopped)  // If a stop is requested, immediately set speed to 0
+			if (opsConfig.stopped)
+			{  // If a stop is requested, immediately set speed to 0
 				opsConfig.speed = 0;
-			else if (opsConfig.requestedSpeed != opsConfig.speed)
-			{
+			} else if (opState == STATE_MANUAL) {
+				opsConfig.speed = opsConfig.requestedSpeed;
+				if (opsConfig.speed > 0)
+					opsConfig.direction = DIRECTION_FORWARD;
+				else if (opsConfig.speed < 0)
+					opsConfig.direction = DIRECTION_REVERSE;			
+			} else if (opsConfig.requestedSpeed != opsConfig.speed)	{
 				// Ramp rate is the number of deciseconds it should take to go from 0-max
 				// What we need is the speed change per decisecond
 				// Fix 1/4/2021 - add a floor for the max speed, otherwise at 0 it never turns off, and at only a couple percent
@@ -1207,6 +1223,11 @@ int main(void)
 						case STATE_FTOCLEAR:
 							strcpy(opStateStr, "FCL ");
 							break;
+
+						case STATE_MANUAL:
+							strcpy(opStateStr, "MAN ");
+							break;
+
 						default:
 							snprintf(opStateStr, sizeof(opStateStr), "%03d", opState);
 							break;
@@ -2657,6 +2678,7 @@ int main(void)
 					{
 						opsConfig.travelMode = configSaveU8;
 						saveOpsConfiguration(&opsConfig);
+						doFastReinitialize();
 						forceReset();
 					}
 
@@ -2786,46 +2808,54 @@ int main(void)
 				lcd_gotoxy(1,1);
 				lcd_puts_p(PSTR("Run Speed:"));
 				screenState = SCREEN_CONF_MANUAL_DRAW;
+				opState = STATE_MANUAL;
+				manualSpeed = currentLoco.maxSpeed;
+				manualDirection = (opsConfig.direction == DIRECTION_REVERSE)?DIRECTION_REVERSE:DIRECTION_FORWARD;
 				break;
 
 			case SCREEN_CONF_MANUAL_DRAW:
-				drawSoftKeys_p((currentLoco.maxSpeed < 100)?PSTR("SPD+"):PSTR(""), (currentLoco.maxSpeed > 0)?PSTR("SPD-"):PSTR(""), PSTR("F<>R"), PSTR("BACK"));
+				drawSoftKeys_p((manualSpeed< 100)?PSTR("SPD+"):PSTR(""), (manualSpeed> 0)?PSTR("SPD-"):PSTR(""), PSTR("F<>R"), PSTR("REBT"));
 				screenState = SCREEN_CONF_MANUAL_IDLE;
 				break;
 
 			case SCREEN_CONF_MANUAL_IDLE:
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", opsConfig.requestedSpeed<0?'R':'F', currentLoco.maxSpeed);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", (manualDirection==DIRECTION_REVERSE)?'R':'F', manualSpeed);
 				lcd_gotoxy(12, 1);
 				lcd_puts(screenLineBuffer);
 
-/*				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05d %05d %03d", opsConfig.requestedSpeed, opsConfig.speed, currentLoco.maxSpeed);
-				lcd_gotoxy(0, 2);
-				lcd_puts(screenLineBuffer);*/
+				if (manualDirection == DIRECTION_REVERSE)
+					opsConfig.requestedSpeed = (int16_t)manualSpeed * -100;
+				else
+					opsConfig.requestedSpeed = (int16_t)manualSpeed * 100;
 
 				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
 				{
-					if (currentLoco.maxSpeed < 100)
-						currentLoco.maxSpeed++;
+					if (manualSpeed < 100)
+						manualSpeed++;
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if ((SOFTKEY_2 | SOFTKEY_2_LONG) & buttonsPressed)
 				{
-					if (currentLoco.maxSpeed > 0)
-						currentLoco.maxSpeed--;
+					if (manualSpeed > 0)
+						manualSpeed--;
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
-					if (opsConfig.requestedSpeed > 0)
-						opState = STATE_FWDDECEL;
-					else
-						opState = STATE_REVDECEL;
+					manualSpeed = 0;
+					if (manualDirection==DIRECTION_FORWARD)
+					{
+						manualDirection = DIRECTION_REVERSE;
+					} else {
+						manualDirection = DIRECTION_FORWARD;
+					}
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if (SOFTKEY_4 & buttonsPressed)
 				{
 					lcd_clrscr();
-					screenState = SCREEN_MAIN_DRAW;
+					doFastReinitialize();
+					forceReset();
 				}
 				// Buttons handled, clear
 				buttonsPressed = 0;

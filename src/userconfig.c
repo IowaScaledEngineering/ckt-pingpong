@@ -49,7 +49,6 @@ const char* getAccModeText(AccOperationMode mode)
 	return ("UNDEF");
 }
 
-
 void loadOpsConfiguration(OpsConfiguration* opsConfig)
 {
 	uint8_t flags1 = eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_FLAGS1);
@@ -284,6 +283,21 @@ void loadAccConfiguration(uint8_t whichConfig, AccConfig* accConfig)
 	t = eeprom_read_byte((uint8_t*)EEP_ACCCONFIG_FLAGS1_OFFSET + offset);
 	
 	accConfig->startState = (t & ACCCONFIG_FLAGS1_START_SET)?true:false;
+}
+
+void doFastReinitialize()
+{
+	eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_REINITIALIZE, 0x00);
+}
+
+bool isFastReinitialize()
+{
+	if (0xFF != eeprom_read_byte((uint8_t*)EEP_OPSCONFIG_REINITIALIZE))
+	{
+		eeprom_write_byte((uint8_t*)EEP_OPSCONFIG_REINITIALIZE, 0xFF);
+		return true;
+	}
+	return false;
 }
 
 void firstTimeInitAccConfig()

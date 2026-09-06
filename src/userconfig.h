@@ -97,8 +97,7 @@ typedef struct
 #define EEP_OPSCONFIG_BACKLIGHT_DELAY 0x0005 
 #define EEP_OPSCONFIG_DEF_DIRECTION   0x0006
 #define EEP_OPSCONFIG_TRAVEL_MODE     0x0007
-
-
+#define EEP_OPSCONFIG_REINITIALIZE    0x0008
 
 
 #define OPSCONFIG_FLAGS1_DC_MODE      0x01
@@ -109,6 +108,10 @@ typedef struct
 
 void loadOpsConfiguration(OpsConfiguration* opsConfig);
 void saveOpsConfiguration(OpsConfiguration* opsConfig);
+
+void doFastReinitialize();
+bool isFastReinitialize();
+
 void firstTimeInitOpsConfiguration();
 
 
