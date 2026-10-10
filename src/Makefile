@@ -33,7 +33,7 @@ PROGRAMMER_TYPE=iseavrprog
 PROGRAMMER_PORT=usb
 
 # ATmega1284PA 12MHz @ 3.3V
-DEVICE  = atmega1284
+DEVICE  = atmega1284p
 F_CPU   = 12000000  # Hz
 FUSE_L  = 0xFF
 FUSE_H  = 0xD1
@@ -42,10 +42,10 @@ FUSE_E  = 0xFD
 GITREV := $(shell git rev-parse --short=6 HEAD)
 #REV    := $(shell ./git-revision.sh)
 
-DEFINES := -DGIT_REV=0x$(GITREV)L -DENABLE_WATCHDOG -DHWREV_MAJOR=1 -DHWREV_MINOR=0 -DSWREV_MAJOR=1 -DSWREV_MINOR=2
+DEFINES := -DGIT_REV=0x$(GITREV)L -DENABLE_WATCHDOG -DHWREV_MAJOR=1 -DHWREV_MINOR=0 -DSWREV_MAJOR=2 -DSWREV_MINOR=0
 
-SRCS = $(BASE_NAME).c lcd.c dc.c dcc.c userconfig.c increment.c
-INCS = lcd.h dc.h dcc.h userconfig.h increment.h
+SRCS = $(BASE_NAME).c lcd.c dc.c dcc.c userconfig.c increment.c eepromWearLevel.c
+INCS = lcd.h dc.h dcc.h userconfig.h increment.h eepromWearLevel.h
 
 
 CFILES    = $(filter %.c, $(SRCS))

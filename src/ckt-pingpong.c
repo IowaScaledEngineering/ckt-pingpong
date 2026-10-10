@@ -41,6 +41,8 @@ LICENSE:
 #include "dcc.h"
 #include "userconfig.h"
 #include "increment.h"
+#include "eepromWearLevel.h"
+#include "screenStates.h"
 
 typedef enum
 {
@@ -57,8 +59,24 @@ typedef enum
 	STATE_FWDINTWAIT,
 	STATE_REVINTACCEL,
 	STATE_FWDINTACCEL,
+	STATE_FTOF_WAIT,
+	STATE_RTOR_WAIT,
+	STATE_FTOCLEAR,
+	STATE_MANUAL
 
 } OpState;
+
+typedef struct
+{
+	OpState opState;
+	int16_t requestedSpeed;
+	uint8_t direction;
+	uint8_t fwdSensorMask;
+	uint8_t revSensorMask;
+	uint8_t fwdIntSensorMask;
+	uint8_t revIntSensorMask;
+	uint8_t accStateMask;
+} OpsStateSave;
 
 
 // ******** Start 100 Hz Timer - Very Accurate Version
@@ -79,6 +97,8 @@ volatile uint8_t eventFlags=0;
 #define EVENT_ANALOG_READ_COMPLETE  0x10
 
 uint32_t loopCount = 0;
+OpsStateSave lastStateSave, stateSave;
+WearLeveledEEPROM stateSaveEEP;
 
 void blankCursorLine()
 {
@@ -172,118 +192,6 @@ ISR(ADC_vect)
 	}
 }
 
-
-typedef enum
-{
-	SCREEN_MAIN_DRAW = 0,
-	SCREEN_MAIN_REFRESH = 1,
-	SCREEN_MAIN_IDLE = 2,
-	
-	SCREEN_CONF_MENU_DRAW = 10,
-	SCREEN_CONF_MENU_IDLE = 11,
-
-	SCREEN_FAST_RESET_DRAW = 14,
-	SCREEN_FAST_RESET_IDLE = 15,
-
-	SCREEN_CONF_OUTPUT_SETUP = 100,
-	SCREEN_CONF_OUTPUT_DRAW  = 101,
-	SCREEN_CONF_OUTPUT_IDLE  = 102,
-
-
-	SCREEN_CONF_LOCOLIST_SETUP = 105,
-	SCREEN_CONF_LOCOLIST_DRAW  = 106,
-	SCREEN_CONF_LOCOLIST_IDLE  = 107,
-
-	SCREEN_CONF_LOCOSLOT1_SETUP = 110,
-	SCREEN_CONF_LOCOSLOT1_DRAW  = 111,
-	SCREEN_CONF_LOCOSLOT1_IDLE  = 112,
-
-	SCREEN_CONF_LOCOSLOT2_SETUP = 113,
-	SCREEN_CONF_LOCOSLOT2_DRAW  = 114,
-	SCREEN_CONF_LOCOSLOT2_IDLE  = 115,
-
-	SCREEN_CONF_LOCOSLOT3_SETUP = 116,
-	SCREEN_CONF_LOCOSLOT3_DRAW  = 117,
-	SCREEN_CONF_LOCOSLOT3_IDLE  = 118,
-
-	SCREEN_LOAD_CONF_SETUP = 120,
-	SCREEN_LOAD_CONF_DRAW = 121,
-	SCREEN_LOAD_CONF_IDLE = 122,
-
-	SCREEN_CONF_DELAY_SETUP = 125,
-	SCREEN_CONF_DELAY_DRAW = 126,
-	SCREEN_CONF_DELAY_IDLE = 127,
-
-	SCREEN_CONF_PAUSED_SETUP = 130,
-	SCREEN_CONF_PAUSED_DRAW = 131,
-	SCREEN_CONF_PAUSED_IDLE = 132,
-	
-	SCREEN_CONF_MIDDELAY_SETUP = 135,
-	SCREEN_CONF_MIDDELAY_DRAW = 136,
-	SCREEN_CONF_MIDDELAY_IDLE = 137,
-	
-	SCREEN_CONF_INTSENSE_SETUP = 140,
-	SCREEN_CONF_INTSENSE_DRAW  = 141,
-	SCREEN_CONF_INTSENSE_IDLE  = 142,
-
-	SCREEN_CONF_ACCLIST_SETUP = 145,
-	SCREEN_CONF_ACCLIST_DRAW  = 146,
-	SCREEN_CONF_ACCLIST_IDLE  = 147,
-
-	SCREEN_CONF_ACCCONF_SETUP  = 150,
-	SCREEN_CONF_ACCCONF_DRAW   = 151,
-	SCREEN_CONF_ACCCONF_IDLE   = 152,
-	
-	SCREEN_CONF_RELEARN_SETUP = 153,
-	SCREEN_CONF_RELEARN_DRAW = 154,
-	SCREEN_CONF_RELEARN_IDLE = 155,
-
-	SCREEN_CONF_BACKLITE_SETUP = 235,
-	SCREEN_CONF_BACKLITE_DRAW  = 236,
-	SCREEN_CONF_BACKLITE_IDLE  = 237,
-	SCREEN_CONF_BACKLITE_OFF   = 238,
-
-	SCREEN_CONF_MANUAL_SETUP = 240,
-	SCREEN_CONF_MANUAL_DRAW  = 241,
-	SCREEN_CONF_MANUAL_IDLE  = 242,
-
-	SCREEN_CONF_RESET_SETUP = 245,
-	SCREEN_CONF_RESET_DRAW  = 246,
-	SCREEN_CONF_RESET_IDLE  = 247,
-
-	SCREEN_CONF_DIAG_SETUP = 250,
-	SCREEN_CONF_DIAG_DRAW  = 251,
-	SCREEN_CONF_DIAG_IDLE  = 252,
-	
-	SCREEN_DONT_KNOW = 255
-
-} ScreenState;
-
-
-typedef struct
-{
-	const char* configName;
-	ScreenState configScreen;
-} ConfigurationOption;
-
-const ConfigurationOption configurationOptions[] = 
-{
-  { "Locomotive Config",  SCREEN_CONF_LOCOLIST_SETUP },
-  { "Accessory Config",   SCREEN_CONF_ACCLIST_SETUP },
-  { "DC/DCC Output ",     SCREEN_CONF_OUTPUT_SETUP },
-  { "Endpoint Delay",     SCREEN_CONF_DELAY_SETUP },
-  { "Midpoint Delay",     SCREEN_CONF_MIDDELAY_SETUP },  
-  { "Midpoints Enable",   SCREEN_CONF_INTSENSE_SETUP },
-  { "Pause on Start",     SCREEN_CONF_PAUSED_SETUP },
-  { "Stop Relearns Dir",   SCREEN_CONF_RELEARN_SETUP },
-  { "Backlight Timeout",  SCREEN_CONF_BACKLITE_SETUP },  
-  { "Turn Off Backlight", SCREEN_CONF_BACKLITE_OFF },  
-  { "Diagnostics",        SCREEN_CONF_DIAG_SETUP },  
-  { "Factory Reset",      SCREEN_CONF_RESET_SETUP },  
-};
-
-#define NUM_CONF_OPTIONS  (sizeof(configurationOptions)/sizeof(ConfigurationOption))
-
 void initialize100HzTimer(void)
 {
 	// Set up timer 3 for 100Hz interrupts
@@ -315,6 +223,15 @@ ISR(TIMER3_COMPA_vect)
 	}
 }
 
+#define ANALOG_CHANNEL_PHASE_A_VOLTS  0
+#define ANALOG_CHANNEL_PHASE_B_VOLTS  1
+#define ANALOG_CHANNEL_INPUT_VOLTS    2
+#define ANALOG_CHANNEL_TRACK_CURRENT  3
+
+#define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
+#define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
+#define INT_SENSOR_INPUT_MASK (_BV(PC6) | _BV(PC7))
+
 #define LCD_BACKLIGHT_PIN  PB4
 
 void lcd_backlightOn()
@@ -328,10 +245,6 @@ void lcd_backlightOff()
 	DDRB |= _BV(LCD_BACKLIGHT_PIN);
 	PORTB &= ~_BV(LCD_BACKLIGHT_PIN);
 }
-
-#define PANEL_SWITCH_MASK (_BV(PC2) | _BV(PC3) | _BV(PC4) | _BV(PC5))
-#define SENSOR_INPUT_MASK (_BV(PD7) | _BV(PD6))
-#define INT_SENSOR_INPUT_MASK (_BV(PC6) | _BV(PC7))
 
 #define SOFTKEY_1      0x01
 #define SOFTKEY_2      0x02
@@ -399,9 +312,11 @@ void init(void)
 	initializeADC();
 	// Enable interrupts
 	sei();
+
+	ewlInit(&stateSaveEEP, (const uint8_t*)EEP_WEAR_LEVEL_STATE_START_ADDR, 50 * (sizeof(OpsStateSave)+1), sizeof(OpsStateSave));
 }
 
-void drawSplashScreen()
+void drawSplashScreen(uint8_t delayDecisecs)
 {
 	char buffer[24];
 	lcd_setup_bigdigits();
@@ -416,11 +331,11 @@ void drawSplashScreen()
 	lcd_gotoxy(0,1);
 	lcd_puts_p(PSTR(" Shuttle Controller "));
 	lcd_gotoxy(0,2);
-	lcd_puts_p(PSTR("Iowa Scaled Eng 2022"));
+	lcd_puts_p(PSTR("Iowa Scaled Eng 2026"));
 	lcd_gotoxy(0,3);
 	lcd_puts_p(PSTR("  www.iascaled.com  "));
 	
-	for(uint8_t i=0; i<30; i++)
+	for(uint8_t i=0; i<delayDecisecs; i++)
 	{
 		wdt_reset();
 		_delay_ms(100);
@@ -511,18 +426,18 @@ void calcEndpointAccFunctions(uint8_t trackStatus, AccConfig* accConfig, OpState
 			case ACC_LE_ST: // this should set when entering the left end, clear when departing
 				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_LEFT))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT || opState == STATE_FTOF_WAIT || opState == STATE_RTOR_WAIT) && true == accConfig[r].currentState)
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
 				break;
 			case ACC_RE_ST:
 				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & TRACK_STATUS_SENSOR_RIGHT))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT || opState == STATE_FTOF_WAIT || opState == STATE_RTOR_WAIT) && true == accConfig[r].currentState)
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
 			case ACC_XE_ST:
 				if ((opState == STATE_FWDDECEL || opState == STATE_REVDECEL) && (trackStatus & (TRACK_STATUS_SENSOR_LEFT | TRACK_STATUS_SENSOR_RIGHT)))
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = true);
-				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT) && true == accConfig[r].currentState)
+				else if ((opState == STATE_RTOF_WAIT || opState == STATE_FTOR_WAIT || opState == STATE_FTOF_WAIT || opState == STATE_RTOR_WAIT) && true == accConfig[r].currentState)
 					accPktQueuePush(accConfig[r].address, accConfig[r].currentState = false);
 				break;
 
@@ -603,17 +518,13 @@ void drawSoftKeys_p(const char* key1Text, const char* key2Text, const char* key3
 	lcd_puts_p(key4Text);
 }
 
-
-
-
-
-#define ANALOG_CHANNEL_PHASE_A_VOLTS  0
-#define ANALOG_CHANNEL_PHASE_B_VOLTS  1
-#define ANALOG_CHANNEL_INPUT_VOLTS    2
-#define ANALOG_CHANNEL_TRACK_CURRENT  3
-
-
-
+void forceReset()
+{
+	lcd_clrscr();
+	lcd_gotoxy(0,1);
+	lcd_puts_p(PSTR("  *Reinitializing* "));
+	while(1);
+}
 
 int main(void)
 {
@@ -626,6 +537,7 @@ int main(void)
 	char screenLineBuffer[21];
 	uint8_t configSaveU8 = 0;
 	uint8_t configSaveU8_2 = 0;
+	uint16_t configSaveU16 = 0;
 	uint8_t configSaveFuncs[5];
 	uint8_t locoSlotOption = 0;
 	OpState opState = STATE_LEARN;
@@ -634,13 +546,19 @@ int main(void)
 	OpsConfiguration opsConfig;
 	AccConfig accConfig[NUM_ACC_OPTIONS];
 	AccConfig tmpAccConfig;
-	uint16_t endStopDelay = 0;
+	uint32_t endStopDelay = 0;
 	uint16_t backlightDelay = 0xFFFF;
 	uint8_t buttonLongPressCounters[4] = {3,3,3,3};
 	DebounceState d;
 	uint8_t fwdSensorMask = 0, revSensorMask = 0;
 	uint8_t fwdIntSensorMask = 0, revIntSensorMask = 0;
 	bool forceBacklightOff = false;
+	bool restoreFromSaved = false;
+	bool fastReinitialize = false;
+	uint8_t intermediateMask = 0;
+
+	uint8_t manualDirection = DIRECTION_FORWARD;
+	uint8_t manualSpeed = 0;
 
 	memset(&currentLoco, 0, sizeof(currentLoco));
 	memset(&tmpLocoConfig, 0, sizeof(tmpLocoConfig));
@@ -659,9 +577,14 @@ int main(void)
 		loadAccConfiguration(i, &accConfig[i]);
 
 
+	// isReinitialize needs to be first since it also clears the bit that forces a reinitialize.  Otherwise shortcutting might miss it
+	fastReinitialize = isFastReinitialize();
+	if (!fastReinitialize && opsConfig.startFromSavedState && ewlRead(&stateSaveEEP, (const uint8_t*)&lastStateSave, sizeof(OpsStateSave)))
+	{
+		restoreFromSaved = true;
+	}
 	// Initialize the output driver to either DC or DCC operation
 	// In the event of DCC, send the initial state of all accessories
-	
 	if (opsConfig.dcMode)
 		dc_init();
 	else
@@ -671,24 +594,66 @@ int main(void)
 		{
 			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode)
 			{
-				accPktQueuePush(accConfig[r].address, accConfig[r].startState);
-				accConfig[r].currentState = accConfig[r].startState;
+				bool startState = false;
+				// FIXME?  Should this really be if "restore from saved and not learning mode?"
+				if (!restoreFromSaved)
+				{
+					startState = accConfig[r].startState;
+				} else {
+					startState = (lastStateSave.accStateMask & (1<<r))?true:false;
+				}
+				accConfig[r].currentState = startState;
+				accPktQueuePush(accConfig[r].address, startState);
 			}
 		}
 	}
-	drawSplashScreen();
+
+	// Minimize the delay in the splash screen if we're restoring from saved
+	// We don't want to miss a sensor input because we're displaying stuff
+	if (!restoreFromSaved && !fastReinitialize)
+		drawSplashScreen(30);
 	wdt_reset();
-
-
 
 	loopCount = 0;
 
-	opState = STATE_LEARN;
+	if (restoreFromSaved)
+	{
+		opState = lastStateSave.opState;
+		opsConfig.speed = opsConfig.requestedSpeed = lastStateSave.requestedSpeed;
+		opsConfig.direction = lastStateSave.direction;
+		fwdIntSensorMask = lastStateSave.fwdIntSensorMask;
+		fwdSensorMask = lastStateSave.fwdSensorMask;
+		revIntSensorMask = lastStateSave.revIntSensorMask;
+		revSensorMask = lastStateSave.revSensorMask;
+	} else {
+		switch(opsConfig.definedDirection)
+		{
+			case DIRECTION_LEARNED:
+			default:
+				opState = STATE_LEARN;
+				break;
+			case DIRECTION_RIGHT_IS_FORWARD:
+				fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+				revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+				fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+				revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+				opState = STATE_FORWARD;
+				break;
+
+			case DIRECTION_LEFT_IS_FORWARD:
+				fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+				revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+				fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+				revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+				opState = STATE_FORWARD;
+				break;
+		}
+	}
 	opsConfig.stopped = opsConfig.startPaused;
 	opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed * 100;
 	backlightDelay = opsConfig.backlightTimeout * 10;
 
-	while (1)
+	while (true)
 	{
 		bool updateData = false;
 		loopCount++;
@@ -769,7 +734,31 @@ int main(void)
 
 		switch(opState)
 		{
+			case STATE_MANUAL:
+				break;
+
 			case STATE_LEARN:
+				// If for some reason we wind up in here and we're not supposed to learn directions, just
+				//  set up the sensor masks correctly and bail
+				if (DIRECTION_RIGHT_IS_FORWARD == opsConfig.definedDirection)
+				{
+					fwdSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+					revSensorMask = TRACK_STATUS_SENSOR_LEFT;
+					fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+					revIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+					opState = STATE_FORWARD;
+					break;
+				}
+				else if (DIRECTION_LEFT_IS_FORWARD == opsConfig.definedDirection)
+				{
+					fwdSensorMask = TRACK_STATUS_SENSOR_LEFT;
+					revSensorMask = TRACK_STATUS_SENSOR_RIGHT;
+					fwdIntSensorMask = TRACK_STATUS_SENSOR_INT_RIGHT;
+					revIntSensorMask = TRACK_STATUS_SENSOR_INT_LEFT;
+					opState = STATE_FORWARD;
+					break;
+				}
+
 				fwdSensorMask = 0;
 				revSensorMask = 0;
 				fwdIntSensorMask = 0;
@@ -819,6 +808,22 @@ int main(void)
 				}
 				break;
 				
+			case STATE_FTOF_WAIT:
+				opsConfig.requestedSpeed = 0;
+				if (0 == endStopDelay)
+				{
+					calcEndpointAccFunctions(trackStatus, accConfig, opState);
+					opState = STATE_FTOCLEAR;
+				}
+				break;
+
+			case STATE_FTOCLEAR:
+				if (!(trackStatus & fwdSensorMask))
+					opState = STATE_FORWARD;
+				
+				opsConfig.requestedSpeed = (int16_t)currentLoco.maxSpeed*100;
+				break;
+
 			case STATE_FTOR_WAIT:
 				opsConfig.requestedSpeed = 0;
 				if (0 == endStopDelay)
@@ -853,17 +858,26 @@ int main(void)
 				break;
 
 			case STATE_REVERSE:
+				if (TRAVEL_FORWARD_NORMAL_INTERMEDIATES == opsConfig.travelMode)
+					intermediateMask = fwdIntSensorMask;
+				else 
+					intermediateMask = revIntSensorMask;
+
 				if (trackStatus & revSensorMask)
 				{
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVDECEL;
 					calcEndpointAccFunctions(trackStatus, accConfig, opState);
-				} else if (opsConfig.intStopsEnable && (trackStatus & revIntSensorMask)) {
+				} else if (opsConfig.intStopsEnable && (trackStatus & intermediateMask)) {
 					opsConfig.requestedSpeed = 0;
 					opState = STATE_REVINTDECEL;
 					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 				} else {
-					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					if (TRAVEL_BIDIRECTIONAL == opsConfig.travelMode)
+						opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					else
+						// The other two travelMode configurations keep us going forward
+						opsConfig.requestedSpeed = ((int16_t)currentLoco.maxSpeed*100);
 				}
 				break;
 
@@ -890,13 +904,29 @@ int main(void)
 				if (0 == endStopDelay)
 				{
 					opState = STATE_REVINTACCEL;
-					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+
+					if (TRAVEL_BIDIRECTIONAL == opsConfig.travelMode)
+						opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+					else
+						// The other two travelMode configurations keep us going forward
+						opsConfig.requestedSpeed = ((int16_t)currentLoco.maxSpeed*100);
+
 				}
 				break;
 
 			case STATE_REVINTACCEL:
-				opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
-				if (!(trackStatus & revIntSensorMask))
+				if (TRAVEL_FORWARD_NORMAL_INTERMEDIATES == opsConfig.travelMode)
+					intermediateMask = fwdIntSensorMask;
+				else 
+					intermediateMask = revIntSensorMask;
+
+				if (TRAVEL_BIDIRECTIONAL == opsConfig.travelMode)
+					opsConfig.requestedSpeed = -((int16_t)currentLoco.maxSpeed*100);
+				else
+					// The other two travelMode configurations keep us going forward
+					opsConfig.requestedSpeed = ((int16_t)currentLoco.maxSpeed*100);
+
+				if (!(trackStatus & intermediateMask))
 				{
 					calcIntermediateAccFunctions(trackStatus, accConfig, opState);
 					opState = STATE_REVERSE;
@@ -908,7 +938,7 @@ int main(void)
 				if (0 == opsConfig.speed)
 				{
 					endStopDelay = opsConfig.endpointDelay * 10;
-					opState = STATE_FTOR_WAIT;
+					opState = (TRAVEL_FORWARD_NORMAL_INTERMEDIATES == opsConfig.travelMode)?STATE_FTOF_WAIT:STATE_FTOR_WAIT;
 				}
 				break;
 
@@ -944,6 +974,31 @@ int main(void)
 				break;
 		}
 
+		// STEP 2B - save the op state if it changed
+
+		stateSave.opState = opState;
+		stateSave.requestedSpeed = opsConfig.requestedSpeed;
+		stateSave.direction = opsConfig.direction;
+		stateSave.fwdIntSensorMask = fwdIntSensorMask;
+		stateSave.fwdSensorMask = fwdSensorMask;
+		stateSave.revIntSensorMask = revIntSensorMask;
+		stateSave.revSensorMask = revSensorMask;
+		stateSave.accStateMask = 0;
+		for(uint8_t r = 0; r<NUM_ACC_OPTIONS; r++)
+		{
+			if(0 != accConfig[r].address && ACC_DISBL != accConfig[r].trigMode && accConfig[r].currentState)
+			{
+				stateSave.accStateMask |= (1<<r);
+			}
+		}
+
+		// If it changed...
+		if (opsConfig.startFromSavedState &&  0 != memcmp(&lastStateSave, &stateSave, sizeof(OpsStateSave)))
+		{
+			ewlWrite(&stateSaveEEP, (const uint8_t*)&stateSave, sizeof(OpsStateSave));
+			memcpy(&lastStateSave, &stateSave, sizeof(OpsStateSave));
+		}
+
 		// STEP 3 - If it's time to adjust speed (every 100mS), send a new speed to the output
 		//  mechanism (DC or DCC)
 
@@ -967,10 +1022,16 @@ int main(void)
 			}
 
 			// Time to re-evaluate speed
-			if (opsConfig.stopped)  // If a stop is requested, immediately set speed to 0
+			if (opsConfig.stopped)
+			{  // If a stop is requested, immediately set speed to 0
 				opsConfig.speed = 0;
-			else if (opsConfig.requestedSpeed != opsConfig.speed)
-			{
+			} else if (opState == STATE_MANUAL) {
+				opsConfig.speed = opsConfig.requestedSpeed;
+				if (opsConfig.speed > 0)
+					opsConfig.direction = DIRECTION_FORWARD;
+				else if (opsConfig.speed < 0)
+					opsConfig.direction = DIRECTION_REVERSE;			
+			} else if (opsConfig.requestedSpeed != opsConfig.speed)	{
 				// Ramp rate is the number of deciseconds it should take to go from 0-max
 				// What we need is the speed change per decisecond
 				// Fix 1/4/2021 - add a floor for the max speed, otherwise at 0 it never turns off, and at only a couple percent
@@ -984,6 +1045,11 @@ int main(void)
 					opsConfig.speed += increment;
 				else if (opsConfig.requestedSpeed < opsConfig.speed)
 					opsConfig.speed -= increment;
+
+				if (opsConfig.speed > 0)
+					opsConfig.direction = DIRECTION_FORWARD;
+				else if (opsConfig.speed < 0)
+					opsConfig.direction = DIRECTION_REVERSE;			
 			}
 
 			// Set speed / direction
@@ -1005,7 +1071,7 @@ int main(void)
 				
 				dcc_setSpeedAndDir(currentLoco.address, currentLoco.shortDCCAddress, 
 					abs(opsConfig.speed) / 100, (opsConfig.speed >= 0)?0:1,
-					currentLoco.allFunctions | accDecFunctions | ((opsConfig.speed >= 0)?currentLoco.fwdFunctions:currentLoco.revFunctions));
+					currentLoco.allFunctions | accDecFunctions | ((opsConfig.direction == DIRECTION_FORWARD)?currentLoco.fwdFunctions:currentLoco.revFunctions));
 			}
 		}
 
@@ -1043,7 +1109,7 @@ int main(void)
 		}
 		
 		// STEP 5 - Deal with the gigantic UI management state machine
-		// This really should be better
+		// This really should be better.  I mean really.  This is truly terrible.
 		switch(screenState)
 		{
 			case SCREEN_MAIN_DRAW:
@@ -1116,6 +1182,10 @@ int main(void)
 						case STATE_FTOR_WAIT:
 							strcpy(opStateStr, "FTR ");
 							break;
+						case STATE_FTOF_WAIT:
+							strcpy(opStateStr, "FTF ");
+							break;
+
 						case STATE_RTOF_WAIT:
 							strcpy(opStateStr, "RTF ");
 							break;
@@ -1150,7 +1220,13 @@ int main(void)
 						case STATE_FWDINTACCEL:
 							strcpy(opStateStr, "FIA ");
 							break;
+						case STATE_FTOCLEAR:
+							strcpy(opStateStr, "FCL ");
+							break;
 
+						case STATE_MANUAL:
+							strcpy(opStateStr, "MAN ");
+							break;
 
 						default:
 							snprintf(opStateStr, sizeof(opStateStr), "%03d", opState);
@@ -1162,22 +1238,30 @@ int main(void)
 				lcd_gotoxy(10,2);
 				// [RMP:yy.ys L-?/R-?/I-]
 				lcd_putc('L');
-				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_LEFT)?'*':'-');
+
+				char c = '-';
+				if (trackStatus & TRACK_STATUS_SENSOR_LEFT)
+					c = '*';
+				lcd_putc(c);
 
 				if (TRACK_STATUS_SENSOR_LEFT == fwdSensorMask)
-					lcd_putc('F');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'F':'f');
 				else if (TRACK_STATUS_SENSOR_LEFT == revSensorMask)
-					lcd_putc('R');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'R':'r');
 				else
 					lcd_putc('?');
 				lcd_putc('/');
 				lcd_putc('R');
-				lcd_putc((trackStatus & TRACK_STATUS_SENSOR_RIGHT)?'*':'-');
+
+				c = '-';
+				if (trackStatus & TRACK_STATUS_SENSOR_RIGHT)
+					c = '*';
+				lcd_putc(c);
 
 				if (TRACK_STATUS_SENSOR_RIGHT == fwdSensorMask)
-					lcd_putc('F');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'F':'f');
 				else if (TRACK_STATUS_SENSOR_RIGHT == revSensorMask)
-					lcd_putc('R');
+					lcd_putc((DIRECTION_LEARNED == opsConfig.definedDirection)?'R':'r');
 				else
 					lcd_putc('?');
 
@@ -1294,7 +1378,7 @@ int main(void)
 				{
 					screenState = SCREEN_MAIN_DRAW;
 				}
-				else if (SOFTKEY_3 & buttonsPressed && (configurationOptions[configMenuOption].configScreen))
+				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Stop old locomotive in DCC mode
 					if (!opsConfig.dcMode)
@@ -1368,7 +1452,7 @@ int main(void)
 				{
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
-				else if (SOFTKEY_3 & buttonsPressed && (configurationOptions[configMenuOption].configScreen))
+				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					screenState = SCREEN_CONF_LOCOSLOT1_SETUP;
 				}
@@ -1382,13 +1466,6 @@ int main(void)
 				locoSlotOption = 0;
 				screenState = SCREEN_CONF_ACCLIST_DRAW;
 				break;
-
-
-// mmmm = LS-RC
-// mmmm = LC-RS
-// mmmm = LSTOG
-// mmmm = RSTOG
-
 
 //  00000000001111111111
 //  01234567890123456789
@@ -1709,10 +1786,12 @@ int main(void)
 					{
 						// DC mode, we're saving
 						saveLocoConfiguration(0, &tmpLocoConfig);
+						// Load configuration and make active for DC, since there's no other way to do it
+						loadLocoConfiguration(0, &currentLoco);  
 						screenState = SCREEN_CONF_LOCOLIST_SETUP;
 					} else {
 						// DCC mode, on to the function screen
-						screenState = SCREEN_CONF_LOCOSLOT2_SETUP;
+						screenState = SCREEN_CONF_LOCOSLOT2A_SETUP;
 					}
 				}
 				else if (SOFTKEY_4 & buttonsPressed)
@@ -1727,6 +1806,130 @@ int main(void)
 
 				break;
 
+
+//  Loco Configuration Screen 2A
+//  00000000001111111111
+//  01234567890123456789
+// [nn   ALL ALL ALL ALL]
+// [     Fnn Fnn Fnn Fnn]
+// [     ^              ]
+// [ +++  >>> SAVE CNCL ]
+// nn = locomotive slot number or DC (slot 0)
+// xxxx = address (or *DC* for DC)
+// nnn = max speed %
+// yy.y = ramp time
+
+			case SCREEN_CONF_LOCOSLOT2A_SETUP:
+				lcd_clrscr();
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ALL ALL ALL ALL", min(99, locoSlotOption));
+				lcd_puts(screenLineBuffer);
+				configSaveU8 = 0;
+				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("NEXT"), PSTR("CNCL"));
+				{
+					uint8_t i, j;
+					for(i=0; i<4; i++)
+						configSaveFuncs[i] = 29; // Set all functions to 29 - which is unset
+
+					for(i=0, j=0; i<=28; i++)
+					{
+						if (tmpLocoConfig.allFunctions & ((uint32_t)1UL<<i))
+						{
+							configSaveFuncs[j++] = i;
+							if (j >= 4)
+								break;
+						}
+					}
+				}
+				screenState = SCREEN_CONF_LOCOSLOT2A_DRAW;
+				
+				break;
+
+			case SCREEN_CONF_LOCOSLOT2A_DRAW:
+				blankCursorLine();
+				for(uint8_t i=0; i<4; i++)
+				{
+					if (configSaveFuncs[i] >= 29)
+						strncpy(screenLineBuffer, "F--", sizeof(screenLineBuffer));
+					else
+						snprintf(screenLineBuffer, sizeof(screenLineBuffer), "F%02d", configSaveFuncs[i]);
+					switch(i)
+					{
+						case 0:
+							lcd_gotoxy(5, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(6, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 1:
+							lcd_gotoxy(9, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(10, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 2:
+							lcd_gotoxy(13, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(14, 2);
+								lcd_puts("^^");
+							}
+							break;
+
+						case 3:
+							lcd_gotoxy(17, 1);
+							lcd_puts(screenLineBuffer);
+							if (configSaveU8 == i)
+							{
+								lcd_gotoxy(18, 2);
+								lcd_puts("^^");
+							}
+							break;
+					}
+				}
+				screenState = SCREEN_CONF_LOCOSLOT2A_IDLE;
+				break;
+
+			case SCREEN_CONF_LOCOSLOT2A_IDLE:
+				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
+				{
+					configSaveFuncs[configSaveU8] = (configSaveFuncs[configSaveU8] + 1) % 30;
+					screenState = SCREEN_CONF_LOCOSLOT2A_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 3)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_LOCOSLOT2A_DRAW;
+				}
+				else if (SOFTKEY_3 & buttonsPressed)
+				{
+					tmpLocoConfig.allFunctions = ((uint32_t)1UL<<configSaveFuncs[0]) | ((uint32_t)1UL<<configSaveFuncs[1]);
+					tmpLocoConfig.allFunctions |= ((uint32_t)1UL<<configSaveFuncs[2]) | ((uint32_t)1UL<<configSaveFuncs[3]);
+					screenState = SCREEN_CONF_LOCOSLOT2B_SETUP;
+				}
+				else if (SOFTKEY_4 & buttonsPressed)
+				{
+					// Cancel
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+
+				// Buttons handled, clear
+				buttonsPressed = 0;
+
+				break;
+
+
 //  Loco Configuration Screen 2
 //  00000000001111111111
 //  01234567890123456789
@@ -1739,27 +1942,26 @@ int main(void)
 // nnn = max speed %
 // yy.y = ramp time
 
-			case SCREEN_CONF_LOCOSLOT2_SETUP:
+			case SCREEN_CONF_LOCOSLOT2B_SETUP:
 				lcd_clrscr();
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   FWD FWD REV REV", locoSlotOption);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   FWD FWD REV REV", min(99, locoSlotOption));
 				lcd_puts(screenLineBuffer);
 				configSaveU8 = 0;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("NEXT"), PSTR("CNCL"));
 				{
 					uint8_t i;
-					for(i=0; i<5; i++)
+					for(i=0; i<4; i++)
 						configSaveFuncs[i] = 29; // Set all functions to 29 - which is unset
 
 					for(i=0; i<=28; i++)
 					{
-						if (tmpLocoConfig.allFunctions & ((uint32_t)1UL<<i))
+						if (tmpLocoConfig.fwdFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[0] = i;
 							break;
 						}
 					}
-
-					for(i=0; i<=28; i++)
+					for(i++; i<=28; i++)
 					{
 						if (tmpLocoConfig.fwdFunctions & ((uint32_t)1UL<<i))
 						{
@@ -1767,16 +1969,17 @@ int main(void)
 							break;
 						}
 					}
-					for(i++; i<=28; i++)
+					
+					for(i=0; i<=28; i++)
 					{
-						if (tmpLocoConfig.fwdFunctions & ((uint32_t)1UL<<i))
+						if (tmpLocoConfig.revFunctions & ((uint32_t)1UL<<i))
 						{
 							configSaveFuncs[2] = i;
 							break;
 						}
 					}
 					
-					for(i=0; i<=28; i++)
+					for(i++; i<=28; i++)
 					{
 						if (tmpLocoConfig.revFunctions & ((uint32_t)1UL<<i))
 						{
@@ -1784,23 +1987,14 @@ int main(void)
 							break;
 						}
 					}
-					
-					for(i++; i<=28; i++)
-					{
-						if (tmpLocoConfig.revFunctions & ((uint32_t)1UL<<i))
-						{
-							configSaveFuncs[4] = i;
-							break;
-						}
-					}
 				}
-				screenState = SCREEN_CONF_LOCOSLOT2_DRAW;
+				screenState = SCREEN_CONF_LOCOSLOT2B_DRAW;
 				
 				break;
 
-			case SCREEN_CONF_LOCOSLOT2_DRAW:
+			case SCREEN_CONF_LOCOSLOT2B_DRAW:
 				blankCursorLine();
-				for(uint8_t i=0; i<5; i++)
+				for(uint8_t i=0; i<4; i++)
 				{
 					if (configSaveFuncs[i] >= 29)
 						strncpy(screenLineBuffer, "F--", sizeof(screenLineBuffer));
@@ -1809,16 +2003,6 @@ int main(void)
 					switch(i)
 					{
 						case 0:
-							lcd_gotoxy(1, 1);
-							lcd_puts(screenLineBuffer);
-							if (configSaveU8 == i)
-							{
-								lcd_gotoxy(2, 2);
-								lcd_puts("^^");
-							}
-							break;
-
-						case 1:
 							lcd_gotoxy(5, 1);
 							lcd_puts(screenLineBuffer);
 							if (configSaveU8 == i)
@@ -1828,7 +2012,7 @@ int main(void)
 							}
 							break;
 
-						case 2:
+						case 1:
 							lcd_gotoxy(9, 1);
 							lcd_puts(screenLineBuffer);
 							if (configSaveU8 == i)
@@ -1838,7 +2022,7 @@ int main(void)
 							}
 							break;
 
-						case 3:
+						case 2:
 							lcd_gotoxy(13, 1);
 							lcd_puts(screenLineBuffer);
 							if (configSaveU8 == i)
@@ -1848,7 +2032,7 @@ int main(void)
 							}
 							break;
 
-						case 4:
+						case 3:
 							lcd_gotoxy(17, 1);
 							lcd_puts(screenLineBuffer);
 							if (configSaveU8 == i)
@@ -1859,28 +2043,27 @@ int main(void)
 							break;
 					}
 				}
-				screenState = SCREEN_CONF_LOCOSLOT2_IDLE;
+				screenState = SCREEN_CONF_LOCOSLOT2B_IDLE;
 				break;
 
-			case SCREEN_CONF_LOCOSLOT2_IDLE:
+			case SCREEN_CONF_LOCOSLOT2B_IDLE:
 				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
 				{
 					configSaveFuncs[configSaveU8] = (configSaveFuncs[configSaveU8] + 1) % 30;
-					screenState = SCREEN_CONF_LOCOSLOT2_DRAW;
+					screenState = SCREEN_CONF_LOCOSLOT2B_DRAW;
 				}
 				else if (SOFTKEY_2 & buttonsPressed)
 				{
 					configSaveU8++;
-					if (configSaveU8 > 5)
+					if (configSaveU8 > 3)
 						configSaveU8 = 0;
-					screenState = SCREEN_CONF_LOCOSLOT2_DRAW;
+					screenState = SCREEN_CONF_LOCOSLOT2B_DRAW;
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
-					tmpLocoConfig.allFunctions = ((uint32_t)1UL<<configSaveFuncs[0]);
-					tmpLocoConfig.fwdFunctions = ((uint32_t)1UL<<configSaveFuncs[1]) | ((uint32_t)1UL<<configSaveFuncs[2]);
-					tmpLocoConfig.revFunctions = ((uint32_t)1UL<<configSaveFuncs[3]) | ((uint32_t)1UL<<configSaveFuncs[4]);
+					tmpLocoConfig.fwdFunctions = ((uint32_t)1UL<<configSaveFuncs[0]) | ((uint32_t)1UL<<configSaveFuncs[1]);
+					tmpLocoConfig.revFunctions = ((uint32_t)1UL<<configSaveFuncs[2]) | ((uint32_t)1UL<<configSaveFuncs[3]);
 					screenState = SCREEN_CONF_LOCOSLOT3_SETUP;
 				}
 				else if (SOFTKEY_4 & buttonsPressed)
@@ -1907,7 +2090,8 @@ int main(void)
 
 			case SCREEN_CONF_LOCOSLOT3_SETUP:
 				lcd_clrscr();
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC BRK        ", locoSlotOption);
+				//                                                    01  234567890123456789 
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%02d   ACC BRK        ", min(99, locoSlotOption));
 				lcd_puts(screenLineBuffer);
 				configSaveU8 = 0;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
@@ -2091,7 +2275,7 @@ int main(void)
 //  00000000001111111111
 //  01234567890123456789
 // [ENDPOINT DELAY      ]
-// [ Seconds: yy.ys     ]
+// [ Seconds: yyyy.ys   ]
 // [          ^         ]
 // [ +++  >>> SAVE CNCL ]
 // nn = locomotive slot number or DC (slot 0)
@@ -2105,7 +2289,7 @@ int main(void)
 				lcd_gotoxy(1, 1);
 				lcd_puts_p(PSTR("Seconds: "));
 				configSaveU8 = 10;
-				configSaveU8_2 = opsConfig.endpointDelay;
+				configSaveU16 = opsConfig.endpointDelay;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
 				screenState = SCREEN_CONF_DELAY_DRAW;
 				break;
@@ -2113,7 +2297,7 @@ int main(void)
 			case SCREEN_CONF_DELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05us", configSaveU16);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2128,7 +2312,9 @@ int main(void)
 						case 10:
 						case 11:
 						case 12:
-							configSaveU8_2 = deciIncrement(configSaveU8_2, 255, 0, 12 - configSaveU8);
+						case 13:
+						case 14:
+						configSaveU16 = deciIncrement(configSaveU16, 65535, 0, 14 - configSaveU8);
 							break;
 
 						default:
@@ -2143,9 +2329,11 @@ int main(void)
 					{
 						case 10:
 						case 11:
+						case 12:
+						case 13:
 							configSaveU8++;
 							break;
-						case 12:
+						case 14:
 							configSaveU8 = 10;
 							break;
 
@@ -2158,7 +2346,7 @@ int main(void)
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
-					opsConfig.endpointDelay = configSaveU8_2;
+					opsConfig.endpointDelay = configSaveU16;
 					saveOpsConfiguration(&opsConfig);
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
@@ -2180,7 +2368,7 @@ int main(void)
 				lcd_gotoxy(1, 1);
 				lcd_puts_p(PSTR("Seconds: "));
 				configSaveU8 = 10;
-				configSaveU8_2 = opsConfig.midpointDelay;
+				configSaveU16 = opsConfig.midpointDelay;
 				drawSoftKeys_p(PSTR(" ++ "), PSTR(" >> "), PSTR("SAVE"), PSTR("CNCL"));
 				screenState = SCREEN_CONF_MIDDELAY_DRAW;
 				break;
@@ -2188,7 +2376,7 @@ int main(void)
 			case SCREEN_CONF_MIDDELAY_DRAW:
 				blankCursorLine();
 				lcd_gotoxy(10,1);
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%03ds", configSaveU8_2);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05us", configSaveU16);
 				lcd_puts(screenLineBuffer);
 				lcd_gotoxy(configSaveU8, 2);
 				lcd_putc('^');
@@ -2203,7 +2391,9 @@ int main(void)
 						case 10:
 						case 11:
 						case 12:
-							configSaveU8_2 = deciIncrement(configSaveU8_2, 255, 0, 12 - configSaveU8);
+						case 13:
+						case 14:
+							configSaveU16 = deciIncrement(configSaveU16, 65535, 0, 14 - configSaveU8);
 							break;
 
 						default:
@@ -2218,9 +2408,11 @@ int main(void)
 					{
 						case 10:
 						case 11:
+						case 12:
+						case 13:
 							configSaveU8++;
 							break;
-						case 12:
+						case 14:
 							configSaveU8 = 10;
 							break;
 
@@ -2233,7 +2425,7 @@ int main(void)
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
 					// Put the functions back in their bitmasks
-					opsConfig.midpointDelay = configSaveU8_2;
+					opsConfig.midpointDelay = configSaveU16;
 					saveOpsConfiguration(&opsConfig);
 					screenState = SCREEN_CONF_MENU_DRAW;
 				}
@@ -2408,7 +2600,6 @@ int main(void)
 // [[ ] Running         ]
 // [[ ] Paused          ]
 // [ RUN  PAUS SAVE CNCL]
-
 			case SCREEN_CONF_PAUSED_SETUP:
 				lcd_clrscr();
 				configSaveU8 = (opsConfig.startPaused)?1:0;
@@ -2451,6 +2642,199 @@ int main(void)
 				// Buttons handled, clear
 				buttonsPressed = 0;	
 				break;
+
+//  Startup Learning Screen
+//  00000000001111111111
+//  01234567890123456789
+// [Forward Direction:  ]
+// [[ ] Learn           ]
+// [[ ] Right  [ ] Left ]
+// [ NEXT PREV SAVE CNCL]
+
+			case SCREEN_CONF_STARTDIR_SETUP:
+				lcd_clrscr();
+				configSaveU8 = opsConfig.definedDirection;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Forward Direction:"));
+				drawSoftKeys_p(PSTR("NEXT"),  PSTR("PREV"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_STARTDIR_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Learn"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] Right  [ ] Left"));
+				switch(configSaveU8)
+				{
+					case 0:
+					default:
+						lcd_gotoxy(1,1);
+						break;
+					case 1:
+						lcd_gotoxy(1,2);
+						break;
+					case 2:
+						lcd_gotoxy(12,2);
+						break;
+				}
+				lcd_putc('*');
+				screenState = SCREEN_CONF_STARTDIR_IDLE;
+				break;
+
+			case SCREEN_CONF_STARTDIR_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 2)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_STARTDIR_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					if (configSaveU8 == 0)
+						configSaveU8 = 2;
+					else 
+						configSaveU8--;
+
+					screenState = SCREEN_CONF_STARTDIR_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.definedDirection != (bool)configSaveU8))
+					{
+						opsConfig.definedDirection = configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+						opState = STATE_LEARN; // Put it back in learning mode
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
+				
+//  Travel Model Configuration
+//  00000000001111111111
+//  01234567890123456789
+// [Travel Mode:        ]
+// [[ ] Bidirectional   ]
+// [[ ] Loop [ ] Lp2Lp  ]
+// [ NEXT PREV SAVE CNCL]
+
+			case SCREEN_CONF_TRAVELDIR_SETUP:
+				lcd_clrscr();
+				configSaveU8 = opsConfig.travelMode;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Travel Mode:"));
+				drawSoftKeys_p(PSTR("NEXT"),  PSTR("PREV"), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_TRAVELDIR_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Point to Point"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] Loop [ ] Lp2Lp"));
+				switch(configSaveU8)
+				{
+					case 0:
+					default:
+						lcd_gotoxy(1,1);
+						break;
+					case 1:
+						lcd_gotoxy(1,2);
+						break;
+					case 2:
+						lcd_gotoxy(10,2);
+						break;
+				}
+				lcd_putc('*');
+				screenState = SCREEN_CONF_TRAVELDIR_IDLE;
+				break;
+
+			case SCREEN_CONF_TRAVELDIR_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8++;
+					if (configSaveU8 > 2)
+						configSaveU8 = 0;
+					screenState = SCREEN_CONF_TRAVELDIR_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					if (configSaveU8 == 0)
+						configSaveU8 = 2;
+					else 
+						configSaveU8--;
+
+					screenState = SCREEN_CONF_TRAVELDIR_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.travelMode != configSaveU8))
+					{
+						opsConfig.travelMode = configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+						doFastReinitialize();
+						forceReset();
+					}
+
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
+//  00000000001111111111
+//  01234567890123456789
+// [Resume on Power On: ]
+// [[ ] Yes             ]
+// [[ ] No              ]
+// [ YES  NO  SAVE CNCL ]
+
+			case SCREEN_CONF_SAVESTATE_SETUP:
+				lcd_clrscr();
+				configSaveU8 = (opsConfig.startFromSavedState)?1:0;
+				lcd_gotoxy(0,0);
+				lcd_puts_p(PSTR("Resume on Power On:"));
+				drawSoftKeys_p(PSTR("YES"),  PSTR(" NO "), PSTR("SAVE"), PSTR("CNCL"));
+				// Intentional fall-through
+
+			case SCREEN_CONF_SAVESTATE_DRAW:
+				lcd_gotoxy(0,1);
+				lcd_puts_p(PSTR("[ ] Yes"));
+				lcd_gotoxy(0,2);
+				lcd_puts_p(PSTR("[ ] No"));
+				lcd_gotoxy(1, (configSaveU8)?1:2);
+				lcd_putc('*');
+				screenState = SCREEN_CONF_SAVESTATE_IDLE;
+				break;
+
+			case SCREEN_CONF_SAVESTATE_IDLE:
+				if (SOFTKEY_1 & buttonsPressed)
+				{
+					configSaveU8 = 1;
+					screenState = SCREEN_CONF_SAVESTATE_DRAW;
+				}
+				else if (SOFTKEY_2 & buttonsPressed)
+				{
+					configSaveU8 = 0;
+					screenState = SCREEN_CONF_SAVESTATE_DRAW;
+				}
+				else if ((SOFTKEY_3 | SOFTKEY_4) & buttonsPressed)
+				{
+					if (SOFTKEY_3 & buttonsPressed && (opsConfig.startFromSavedState != (bool)configSaveU8))
+					{
+						opsConfig.startFromSavedState = (bool)configSaveU8;
+						saveOpsConfiguration(&opsConfig);
+					}
+					lcd_clrscr();
+					screenState = SCREEN_CONF_MENU_DRAW;
+				}
+				// Buttons handled, clear
+				buttonsPressed = 0;	
+				break;
+
 
 //  00000000001111111111
 //  01234567890123456789
@@ -2517,50 +2901,58 @@ int main(void)
 			case SCREEN_CONF_MANUAL_SETUP:
 				lcd_clrscr();
 				lcd_gotoxy(0,0);
-				lcd_puts_p(PSTR("Manual Adjustment"));
+				lcd_puts_p(PSTR("Manual Operation"));
 				lcd_gotoxy(1,1);
 				lcd_puts_p(PSTR("Run Speed:"));
 				screenState = SCREEN_CONF_MANUAL_DRAW;
+				opState = STATE_MANUAL;
+				manualSpeed = currentLoco.maxSpeed;
+				manualDirection = (opsConfig.direction == DIRECTION_REVERSE)?DIRECTION_REVERSE:DIRECTION_FORWARD;
 				break;
 
 			case SCREEN_CONF_MANUAL_DRAW:
-				drawSoftKeys_p((currentLoco.maxSpeed < 100)?PSTR("SPD+"):PSTR(""), (currentLoco.maxSpeed > 0)?PSTR("SPD-"):PSTR(""), PSTR("F<>R"), PSTR("BACK"));
+				drawSoftKeys_p((manualSpeed< 100)?PSTR("SPD+"):PSTR(""), (manualSpeed> 0)?PSTR("SPD-"):PSTR(""), PSTR("F<>R"), PSTR("RINIT"));
 				screenState = SCREEN_CONF_MANUAL_IDLE;
 				break;
 
 			case SCREEN_CONF_MANUAL_IDLE:
-				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", opsConfig.requestedSpeed<0?'R':'F', currentLoco.maxSpeed);
+				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%c%03d%%", (manualDirection==DIRECTION_REVERSE)?'R':'F', manualSpeed);
 				lcd_gotoxy(12, 1);
 				lcd_puts(screenLineBuffer);
 
-/*				snprintf(screenLineBuffer, sizeof(screenLineBuffer), "%05d %05d %03d", opsConfig.requestedSpeed, opsConfig.speed, currentLoco.maxSpeed);
-				lcd_gotoxy(0, 2);
-				lcd_puts(screenLineBuffer);*/
+				if (manualDirection == DIRECTION_REVERSE)
+					opsConfig.requestedSpeed = (int16_t)manualSpeed * -100;
+				else
+					opsConfig.requestedSpeed = (int16_t)manualSpeed * 100;
 
 				if ((SOFTKEY_1 | SOFTKEY_1_LONG) & buttonsPressed)
 				{
-					if (currentLoco.maxSpeed < 100)
-						currentLoco.maxSpeed++;
+					if (manualSpeed < 100)
+						manualSpeed++;
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if ((SOFTKEY_2 | SOFTKEY_2_LONG) & buttonsPressed)
 				{
-					if (currentLoco.maxSpeed > 0)
-						currentLoco.maxSpeed--;
+					if (manualSpeed > 0)
+						manualSpeed--;
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if (SOFTKEY_3 & buttonsPressed)
 				{
-					if (opsConfig.requestedSpeed > 0)
-						opState = STATE_FWDDECEL;
-					else
-						opState = STATE_REVDECEL;
+					manualSpeed = 0;
+					if (manualDirection==DIRECTION_FORWARD)
+					{
+						manualDirection = DIRECTION_REVERSE;
+					} else {
+						manualDirection = DIRECTION_FORWARD;
+					}
 					screenState = SCREEN_CONF_MANUAL_DRAW;
 				}
 				else if (SOFTKEY_4 & buttonsPressed)
 				{
 					lcd_clrscr();
-					screenState = SCREEN_MAIN_DRAW;
+					doFastReinitialize();
+					forceReset();
 				}
 				// Buttons handled, clear
 				buttonsPressed = 0;
