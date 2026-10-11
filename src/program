@@ -1,7 +1,7 @@
 #!/bin/bash
 
 espeak "Programming"
-make fuse firmware HEX=hex/ckt-pingpong-v1.2-780a79-15jul2022.hex
+make fuse firmware HEX=hex/ckt-pingpong-v2.0-8999fde-10oct2026.hex
 
 if [ $? -eq 0 ]
 then espeak "Nincompoop"
