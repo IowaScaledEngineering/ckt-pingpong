@@ -45,7 +45,7 @@ GITREV := $(shell git rev-parse --short=6 HEAD)
 DEFINES := -DGIT_REV=0x$(GITREV)L -DENABLE_WATCHDOG -DHWREV_MAJOR=1 -DHWREV_MINOR=0 -DSWREV_MAJOR=2 -DSWREV_MINOR=0
 
 SRCS = $(BASE_NAME).c lcd.c dc.c dcc.c userconfig.c increment.c eepromWearLevel.c
-INCS = lcd.h dc.h dcc.h userconfig.h increment.h eepromWearLevel.h
+INCS = screenStates.h lcd.h dc.h dcc.h userconfig.h increment.h eepromWearLevel.h
 
 
 CFILES    = $(filter %.c, $(SRCS))
